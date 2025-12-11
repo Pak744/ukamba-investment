@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<h2 class="mb-3">Novo investidor</h2>
+
+<div class="card p-4">
+  <form method="post">
+    <div class="row g-3">
+      <div class="col-md-6">
+        <label class="form-label">Nome completo</label>
+        <input type="text" name="nome" class="form-control" required>
+      </div>
+
+      <div class="col-md-6">
+        <label class="form-label">Profissão</label>
+        <input type="text" name="profissao" class="form-control">
+      </div>
+
+      <div class="col-md-6">
+        <label class="form-label">Email</label>
+        <input type="email" name="email" class="form-control">
+      </div>
+
+      <div class="col-md-6">
+        <label class="form-label">Telefone</label>
+        <input type="text" name="telefone" class="form-control">
+      </div>
+    </div>
+
+    <div class="mt-4">
+      <button type="submit" class="btn btn-primary">
+        Guardar investidor
+      </button>
+      <a href="{{ url_for('ukamba') }}" class="btn btn-outline-secondary ms-2">
+        Cancelar
+      </a>
+    </div>
+  </form>
+</div>
+
+{% endblock %}

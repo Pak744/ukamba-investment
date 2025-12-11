@@ -1,0 +1,183 @@
+/* ===============================
+   LAYOUT GERAL
+   =============================== */
+body {
+    min-height: 100vh;
+    margin: 0;
+    /* Fundo azul em degradê */
+    background: linear-gradient(180deg, #0D47A1 0%, #0D47A1 22%, #E3F2FD 22%, #E3F2FD 100%) !important;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+/* container principal */
+.main-container {
+    max-width: 1200px;
+}
+
+/* ===============================
+   NAVBAR
+   =============================== */
+.navbar {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.navbar-brand {
+    letter-spacing: 0.03em;
+}
+
+/* ===============================
+   CARDS DO DASHBOARD
+   =============================== */
+
+.card-dashboard {
+    border: none;
+    border-radius: 18px;
+    box-shadow: 0 8px 20px rgba(13, 71, 161, 0.18);
+    position: relative;
+    overflow: hidden;
+    background: #ffffff;
+}
+
+.card-dashboard .card-body {
+    position: relative;
+    z-index: 2;
+}
+
+.card-dashboard::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at top right, rgba(255, 193, 7, 0.3), transparent 55%);
+    opacity: 0.8;
+    z-index: 1;
+}
+
+.card-dashboard-icon {
+    font-size: 1.8rem;
+    opacity: 0.7;
+}
+
+.card-dashboard-title {
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #607D8B;
+    margin-bottom: 0.2rem;
+}
+
+.card-dashboard-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #0D47A1;
+}
+
+/* ===============================
+   BOTÕES PERSONALIZADOS
+   =============================== */
+
+/* Botões principais → amarelo */
+.btn-primary {
+    background-color: #FFC107 !important;
+    border-color: #FFB300 !important;
+    color: #000 !important;
+    font-weight: 600;
+    border-radius: 999px;
+    padding-inline: 1.4rem;
+}
+
+/* Botões outline primary → amarelo contorno */
+.btn-outline-primary {
+    border-color: #FFC107 !important;
+    color: #FFC107 !important;
+    border-radius: 999px;
+    font-weight: 500;
+}
+
+.btn-outline-primary:hover {
+    background-color: #FFC107 !important;
+    color: #000 !important;
+}
+
+/* Danger (apagar) */
+.btn-outline-danger {
+    border-radius: 999px;
+}
+
+/* Botões pequenos */
+.btn-sm {
+    font-size: 0.75rem;
+    padding-block: 0.25rem;
+    padding-inline: 0.8rem;
+}
+
+/* ===============================
+   TABELAS
+   =============================== */
+
+.table-dashboard {
+    background: #ffffff;
+    border-radius: 18px;
+    overflow: hidden;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.06);
+}
+
+.table-dashboard thead {
+    background: #0D47A1;
+    color: #fff;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.table-dashboard tbody tr:hover {
+    background-color: #FFFDE7;
+}
+
+/* ===============================
+   BADGES DE STATUS
+   =============================== */
+
+.badge {
+    border-radius: 999px;
+    font-weight: 500;
+}
+
+/* ===============================
+   CARTÕES DE SECÇÃO / TÍTULOS
+   =============================== */
+.section-header {
+    color: #ffffff;
+}
+
+.section-subtitle {
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 0.9rem;
+}
+
+/* Link no topo */
+a.link-light-underline {
+    color: #BBDEFB;
+    text-decoration: underline;
+    text-decoration-style: dotted;
+}
+
+a.link-light-underline:hover {
+    color: #FFFFFF;
+}
+
+/* ===============================
+   ALERTAS
+   =============================== */
+
+.alert {
+    border-radius: 12px;
+    border: none;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+}
+
+/* ===============================
+   CARDS SIMPLES (OUTRAS PÁGINAS)
+   =============================== */
+.card {
+    border-radius: 16px;
+}

@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2 class="mb-4">Novo investimento para {{ investor.nome }}</h2>
+
+<form method="post">
+  <div class="mb-3">
+    <label class="form-label">Plano</label>
+    <input type="text" name="plano" class="form-control" placeholder="Ex: Plano Ouro 6 meses" required>
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">Valor investido (Kz)</label>
+    <input
+      type="number"
+      step="0.01"
+      min="0"
+      name="valor_investido"
+      id="valor_investido"
+      class="form-control"
+      required
+    >
+    <div class="form-text">
+      Faixas de taxa mensal:
+      <ul class="mb-0">
+        <li>≥ 1.000.000 Kz → 3% ao mês</li>
+        <li>500.000 a 999.999 Kz → 2,5% ao mês</li>
+        <li>100.000 a 499.999 Kz → 2% ao mês</li>
+        <li>Abaixo de 100.000 Kz não é aceite</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">Duração (meses)</label>
+    <select name="meses" id="meses" class="form-select" required>
+      <option value="" disabled selected>Selecione...</option>
+      <option value="1">1 mês</option>
+      <option value="2">2 meses</option>
+      <option value="3">3 meses</option>
+      <option value="4">4 meses</option>
+      <option value="5">5 meses</option>
+      <option value="6">6 meses</option>
+      <option value="7">7 meses</option>
+      <option value="8">8 meses</option>
+      <option value="9">9 meses</option>
+      <option value="10">10 meses</option>
+      <option value="11">11 meses</option>
+      <option value="12">12 meses</option>
+    </select>
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">Taxa de juro (simulação)</label>
+    <!-- apenas visual, o back-end calcula o valor real -->
+    <input type="text" id="taxa_juro_visual" class="form-control" readonly>
+    <div class="form-text">
+      A taxa mensal e a taxa total (juros compostos) são calculadas automaticamente
+      com base no valor investido e na duração.
+    </div>
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">Data de início</label>
+    <input type="date" name="data_inicio" class="form-control" required>
+  </div>
+
+  <button type="submit" class="btn btn-primary">Guardar investimento</button>
+  <a href="{{ url_for('investor_detail', investor_id=investor.id) }}" class="btn btn-outline-secondary ms-2">
+    Cancelar
+  </a>
+</form>
+
+<script>
+  const inputValor = document.getElementById("valor_investido");
+  const selectMeses = document.getElementById("meses");
+  const inputTaxa = document.getElementById("taxa_juro_visual");
+
+  function atualizarTaxa() {
+    const valor = parseFloat(inputValor.value || "0");
+    const meses = parseInt(selectMeses.value || "0");
+
+    if (!valor || !meses || meses <= 0) {
+      inputTaxa.value = "";
+      return;
+    }
+
+    let taxaMensal = null;
+
+    if (valor >= 1000000) {
+      taxaMensal = 0.03;    // 3% ao mês
+    } else if (valor >= 500000 && valor <= 999999) {
+      taxaMensal = 0.025;   // 2,5% ao mês
+    } else if (valor >= 100000 && valor <= 499999) {
+      taxaMensal = 0.02;    // 2% ao mês
+    } else {
+      inputTaxa.value = "Valor mínimo: 100.000 Kz";
+      return;
+    }
+
+    // juros compostos: taxa total para o período
+    const taxaTotal = Math.pow(1 + taxaMensal, meses) - 1;
+
+    const mensalStr = (taxaMensal * 100).toFixed(2).replace(".", ",") + " %";
+    const totalStr = (taxaTotal * 100).toFixed(2).replace(".", ",") + " %";
+
+    inputTaxa.value = `Mensal: ${mensalStr} | Total em ${meses} mês(es): ${totalStr}`;
+  }
+
+  if (inputValor && selectMeses && inputTaxa) {
+    inputValor.addEventListener("input", atualizarTaxa);
+    selectMeses.addEventListener("change", atualizarTaxa);
+  }
+</script>
+{% endblock %}

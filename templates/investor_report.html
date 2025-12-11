@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="mb-0">Comprovativo de Investimento</h2>
+  <button class="btn btn-outline-primary btn-sm" onclick="window.print()">
+    Imprimir / Guardar em PDF
+  </button>
+</div>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-body">
+    <div class="row">
+      <div class="col-md-8">
+        <h5 class="mb-1">Ukamba Investments</h5>
+        <p class="text-muted mb-2">
+          Comprovativo oficial de aplicação financeira.
+        </p>
+        <p class="mb-1"><strong>Investidor:</strong> {{ investor.nome }}</p>
+        <p class="mb-1">
+          <strong>Profissão:</strong>
+          {% if investor.profissao %}{{ investor.profissao }}{% else %}—{% endif %}
+        </p>
+      </div>
+      <div class="col-md-4 text-md-end">
+        <p class="mb-1"><strong>Data de emissão:</strong> {{ hoje.strftime("%d/%m/%Y") }}</p>
+        <p class="mb-1"><strong>ID do investidor:</strong> {{ investor.id }}</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row mb-4">
+  <div class="col-md-4">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h6 class="text-muted">Total aplicado</h6>
+        <h4>{{ "{:,.2f}".format(total_investido) }} Kz</h4>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h6 class="text-muted">Total reembolsado</h6>
+        <h4>{{ "{:,.2f}".format(total_reembolsado) }} Kz</h4>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h6 class="text-muted">Saldo em aberto</h6>
+        <h4>{{ "{:,.2f}".format(total_em_falta) }} Kz</h4>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h4 class="mb-2">Detalhe das aplicações</h4>
+
+{% if investments %}
+<div class="table-responsive mb-4">
+  <table class="table table-bordered align-middle">
+    <thead class="table-light">
+      <tr>
+        <th>#</th>
+        <th>Plano</th>
+        <th>Valor aplicado (Kz)</th>
+        <th>Prazo (meses)</th>
+        <th>Período</th>
+        <th>Valor a receber (Kz)</th>
+        <th>Reembolsado (Kz)</th>
+        <th>Saldo (Kz)</th>
+        <th>Situação</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for inv in investments %}
+      <tr>
+        <td>{{ loop.index }}</td>
+        <td>{{ inv.plano }}</td>
+        <td>{{ "{:,.2f}".format(inv.valor_investido) }}</td>
+        <td>{{ inv.meses }}</td>
+        <td>
+          {{ inv.data_inicio.strftime("%d/%m/%Y") }}
+          até
+          {{ inv.data_fim.strftime("%d/%m/%Y") }}
+        </td>
+        <td>{{ "{:,.2f}".format(inv.valor_total_a_receber()) }}</td>
+        <td>{{ "{:,.2f}".format(inv.valor_reembolsado) }}</td>
+        <td>{{ "{:,.2f}".format(inv.valor_em_falta()) }}</td>
+        <td>
+          {% if inv.esta_atrasado() %}
+            Atrasado
+          {% elif inv.valor_em_falta() <= 0 %}
+            Concluído
+          {% else %}
+            Em curso
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="text-muted mb-4">
+  Não existem investimentos registados para este investidor.
+</p>
+{% endif %}
+
+<div class="card shadow-sm">
+  <div class="card-body">
+    <p class="mb-3">
+      A Ukamba Investments declara que o investidor acima identificado realizou as
+      aplicações descritas neste documento, bem como recebeu os respetivos
+      reembolsos já registados até à data de emissão deste comprovativo.
+    </p>
+
+    <div class="row mt-4">
+      <div class="col-md-6 text-center">
+        <p class="mb-5">____________________________________</p>
+        <p class="mb-0">Assinatura / Responsável Ukamba</p>
+      </div>
+      <div class="col-md-6 text-center">
+        <p class="mb-5">____________________________________</p>
+        <p class="mb-0">Carimbo / Observações</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

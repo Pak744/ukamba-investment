@@ -1,0 +1,206 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2 class="mb-4">Relatórios</h2>
+
+<!-- KPIs principais -->
+<div class="row g-3 mb-4">
+  <div class="col-md-3">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h6 class="text-muted">Total investido</h6>
+        <h4>{{ "{:,.2f}".format(total_investido) }} Kz</h4>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-3">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h6 class="text-muted">Total reembolsado</h6>
+        <h4>{{ "{:,.2f}".format(total_reembolsado) }} Kz</h4>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-3">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h6 class="text-muted">Total a recuperar</h6>
+        <h4>{{ "{:,.2f}".format(total_a_recuperar) }} Kz</h4>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-3">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h6 class="text-muted">Montante em atraso</h6>
+        <h4 class="text-danger">{{ "{:,.2f}".format(total_atrasado) }} Kz</h4>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- KPIs secundários -->
+<div class="row g-3 mb-5">
+  <div class="col-md-3">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h6 class="text-muted">Nº de investimentos ativos</h6>
+        <h4>{{ num_investimentos_ativos }}</h4>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-3">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h6 class="text-muted">Nº de investidores</h6>
+        <h4>{{ num_investidores }}</h4>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-3">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h6 class="text-muted">Ticket médio por investidor</h6>
+        <h4>{{ "{:,.2f}".format(media_por_investidor) }} Kz</h4>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-3">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h6 class="text-muted">% recuperado (capital + juros)</h6>
+        <h4>{{ "{:,.1f}".format(perc_recuperado) }} %</h4>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Resumo por investidor -->
+<div class="mb-5">
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <h4>Resumo por investidor</h4>
+  </div>
+
+  {% if resumo_investidores %}
+  <div class="table-responsive">
+    <table class="table table-striped table-hover align-middle">
+      <thead>
+        <tr>
+          <th>Investidor</th>
+          <th>Nº investimentos</th>
+          <th>Total investido (Kz)</th>
+          <th>Total reembolsado (Kz)</th>
+          <th>Em falta (Kz)</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in resumo_investidores %}
+        <tr>
+          <td>
+            <a href="{{ url_for('investor_detail', investor_id=item.investor.id) }}">
+              {{ item.investor.nome }}
+            </a>
+          </td>
+          <td>{{ item.qtd }}</td>
+          <td>{{ "{:,.2f}".format(item.valor_investido) }}</td>
+          <td>{{ "{:,.2f}".format(item.valor_reembolsado) }}</td>
+          <td>{{ "{:,.2f}".format(item.valor_em_falta) }}</td>
+          <td>
+            {% if item.atrasado %}
+              <span class="badge bg-danger">Com atraso</span>
+            {% elif item.valor_em_falta > 0 %}
+              <span class="badge bg-warning text-dark">Em curso</span>
+            {% else %}
+              <span class="badge bg-success">Concluído</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    <p>Nenhum investidor com investimentos registados ainda.</p>
+  {% endif %}
+</div>
+
+<!-- Investimentos a vencer nos próximos 30 dias -->
+<div class="mb-5">
+  <h4 class="mb-3">A vencer nos próximos 30 dias</h4>
+
+  {% if a_vencer_30_dias %}
+  <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle">
+      <thead>
+        <tr>
+          <th>Investidor</th>
+          <th>Plano</th>
+          <th>Valor investido (Kz)</th>
+          <th>Data fim</th>
+          <th>Dias restantes</th>
+          <th>Em falta (Kz)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for inv in a_vencer_30_dias %}
+        <tr>
+          <td>{{ inv.investor.nome }}</td>
+          <td>{{ inv.plano }}</td>
+          <td>{{ "{:,.2f}".format(inv.valor_investido) }}</td>
+          <td>{{ inv.data_fim }}</td>
+          <td>{{ inv.dias_restantes() }}</td>
+          <td>{{ "{:,.2f}".format(inv.valor_em_falta()) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    <p>Nenhum investimento a vencer nos próximos 30 dias.</p>
+  {% endif %}
+</div>
+
+<!-- Investimentos atrasados -->
+<div class="mb-5">
+  <h4 class="mb-3">Investimentos atrasados</h4>
+
+  {% if investimentos_atrasados %}
+  <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle">
+      <thead>
+        <tr>
+          <th>Investidor</th>
+          <th>Plano</th>
+          <th>Valor investido (Kz)</th>
+          <th>Data fim</th>
+          <th>Dias em atraso</th>
+          <th>Em falta (Kz)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for inv in investimentos_atrasados %}
+        <tr>
+          <td>{{ inv.investor.nome }}</td>
+          <td>{{ inv.plano }}</td>
+          <td>{{ "{:,.2f}".format(inv.valor_investido) }}</td>
+          <td>{{ inv.data_fim }}</td>
+          <td>{{ inv.dias_restantes() | abs }}</td>
+          <td class="text-danger">{{ "{:,.2f}".format(inv.valor_em_falta()) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    <p>Não há investimentos atrasados. 👏</p>
+  {% endif %}
+</div>
+
+{% endblock %}
