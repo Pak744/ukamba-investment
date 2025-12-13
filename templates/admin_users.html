@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="pt">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Admin - Usuários</title>
+</head>
+<body>
+  <h1>Gestão de Usuários</h1>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <ul>
+        {% for category, msg in messages %}
+          <li><b>{{ category }}:</b> {{ msg }}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+  {% endwith %}
+
+  <h2>Criar utilizador</h2>
+  <form method="post" action="/admin/users">
+    <label>Username</label><br>
+    <input name="username" required><br><br>
+
+    <label>Password</label><br>
+    <input name="password" type="password" required><br><br>
+
+    <label>Função (role)</label><br>
+    <select name="role">
+      <option value="gestor">gestor</option>
+      <option value="leitura">leitura</option>
+      <option value="admin">admin</option>
+    </select><br><br>
+
+    <button type="submit">Criar</button>
+  </form>
+
+  <hr>
+
+  <h2>Utilizadores existentes</h2>
+  <table border="1" cellpadding="6">
+    <tr>
+      <th>ID</th>
+      <th>Username</th>
+      <th>Role</th>
+      <th>Ativo?</th>
+      <th>Ações</th>
+    </tr>
+    {% for u in users %}
+    <tr>
+      <td>{{ u.id }}</td>
+      <td>{{ u.username }}</td>
+      <td>{{ u.role }}</td>
+      <td>{{ "Sim" if u.is_active else "Não" }}</td>
+      <td>
+        <form method="post" action="/admin/users/{{u.id}}/toggle" style="display:inline;">
+          <button type="submit">
+            {{ "Desativar" if u.is_active else "Ativar" }}
+          </button>
+        </form>
+
+        <form method="post" action="/admin/users/{{u.id}}/reset_password" style="display:inline; margin-left:10px;">
+          <input name="new_password" type="password" placeholder="Nova senha" required>
+          <button type="submit">Reset</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+
+  <p style="margin-top:20px;">
+    <a href="/dashboard">Voltar ao dashboard</a>
+  </p>
+</body>
+</html>
