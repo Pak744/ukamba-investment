@@ -1,4 +1,6 @@
 from datetime import datetime, timedelta
+import os
+import io
 
 from flask import (
     Flask, render_template, request, redirect,
@@ -10,16 +12,30 @@ from flask_login import (
     login_required, logout_user, current_user
 )
 from werkzeug.security import generate_password_hash, check_password_hash
-import io
+from functools import wraps
+
+from sqlalchemy import inspect, text
+
 import pandas as pd
 
 # -------------------------------------------------
-# CONFIGURAÇÃO BÁSICA
+# APP + CONFIG
 # -------------------------------------------------
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
-app.config["SECRET_KEY"] = "troca_esta_frase_por_uma_chave_secreta_grande"
-app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///ukamba.db"
+
+# ✅ SECRET_KEY vem do Render (Environment)
+# Se não existir, usa um fallback (apenas para teste local)
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "DEV_ONLY_change_me")
+
+# ✅ DATABASE_URL vem do Render (Environment)
+# Render/Heroku às vezes usam postgres:// e o SQLAlchemy prefere postgresql://
+db_url = os.environ.get("DATABASE_URL")
+if db_url and db_url.startswith("postgres://"):
+    db_url = db_url.replace("postgres://", "postgresql://", 1)
+
+# fallback local
+app.config["SQLALCHEMY_DATABASE_URI"] = db_url or "sqlite:///ukamba.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db = SQLAlchemy(app)
@@ -34,15 +50,29 @@ login_manager.login_view = "login"  # rota de login
 
 class User(db.Model, UserMixin):
     id = db.Column(db.Integer, primary_key=True)
+
     username = db.Column(db.String(50), unique=True, nullable=False)
     password_hash = db.Column(db.String(200), nullable=False)
-    role = db.Column(db.String(20), default="gestor")  # admin | gestor | leitura
+
+    # roles: admin | gestor | leitura
+    role = db.Column(db.String(20), nullable=False, default="gestor")
+
+    # permite bloquear conta
+    is_active = db.Column(db.Boolean, default=True)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def set_password(self, password: str) -> None:
         self.password_hash = generate_password_hash(password)
 
     def check_password(self, password: str) -> bool:
         return check_password_hash(self.password_hash, password)
+
+    def is_admin(self) -> bool:
+        return self.role == "admin"
+
+    def is_gestor(self) -> bool:
+        return self.role == "gestor"
 
 
 class Investor(db.Model):
@@ -96,25 +126,111 @@ def load_user(user_id):
 
 
 # -------------------------------------------------
-# HELPERS DE PERMISSÃO
+# PERMISSÕES (REGRAS DE ACESSO)
 # -------------------------------------------------
 
-def is_admin():
-    return current_user.is_authenticated and current_user.role == "admin"
+def require_roles(*roles):
+    """
+    roles possíveis: "admin", "gestor", "leitura"
+    """
+    def decorator(func):
+        @wraps(func)
+        @login_required
+        def wrapper(*args, **kwargs):
+            if not getattr(current_user, "is_active", True):
+                logout_user()
+                flash("Conta desativada. Contacte o administrador.", "danger")
+                return redirect(url_for("login"))
+
+            user_role = getattr(current_user, "role", None)
+            if user_role not in roles:
+                flash("Sem permissão para aceder a esta página.", "danger")
+                return redirect(url_for("dashboard"))
+            return func(*args, **kwargs)
+        return wrapper
+    return decorator
 
 
-def admin_required(func):
-    # decorador simples
-    from functools import wraps
+# -------------------------------------------------
+# CORREÇÃO PARA O RENDER (POSTGRES): garantir colunas na tabela user
+# -------------------------------------------------
 
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        if not is_admin():
-            flash("Apenas administradores podem aceder a esta página.", "danger")
-            return redirect(url_for("dashboard"))
-        return func(*args, **kwargs)
+def ensure_user_table_columns():
+    """
+    Se o Postgres do Render já tinha uma tabela 'user' antiga,
+    esta função adiciona colunas novas (is_active, created_at)
+    para evitar Internal Server Error.
+    """
+    inspector = inspect(db.engine)
+    tables = inspector.get_table_names()
 
-    return wrapper
+    if "user" not in tables:
+        return  # create_all vai criar
+
+    cols = [c["name"] for c in inspector.get_columns("user")]
+
+    # --- is_active ---
+    if "is_active" not in cols:
+        try:
+            # Postgres (tabela "user" precisa de aspas)
+            db.session.execute(text('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE'))
+        except Exception:
+            # SQLite fallback (não tem IF NOT EXISTS)
+            try:
+                db.session.execute(text("ALTER TABLE user ADD COLUMN is_active BOOLEAN DEFAULT 1"))
+            except Exception:
+                pass
+
+    # --- created_at ---
+    if "created_at" not in cols:
+        try:
+            db.session.execute(text('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS created_at TIMESTAMP'))
+        except Exception:
+            try:
+                db.session.execute(text("ALTER TABLE user ADD COLUMN created_at DATETIME"))
+            except Exception:
+                pass
+
+    db.session.commit()
+
+
+# -------------------------------------------------
+# INICIALIZAÇÃO DO BANCO + ADMIN INICIAL (PRODUÇÃO)
+# -------------------------------------------------
+
+def init_db_and_seed_admin():
+    """
+    - Cria tabelas
+    - Garante colunas na tabela user (Render/Postgres)
+    - Cria admin inicial se não existir
+    """
+    with app.app_context():
+        db.create_all()
+
+        # 🔧 garante colunas ANTES de consultar User.query (evita crash no Render)
+        ensure_user_table_columns()
+
+        # Admin inicial via env (mais seguro)
+        # Configure no Render:
+        # ADMIN_USERNAME, ADMIN_PASSWORD
+        admin_username = os.environ.get("ADMIN_USERNAME", "admin")
+        admin_password = os.environ.get("ADMIN_PASSWORD", None)
+
+        existing_admin = User.query.filter_by(username=admin_username).first()
+        if not existing_admin:
+            if not admin_password:
+                # fallback dev
+                admin_password = "123456"
+
+            u = User(username=admin_username, role="admin", is_active=True)
+            u.set_password(admin_password)
+            db.session.add(u)
+            db.session.commit()
+            print(f"[OK] Admin criado: {admin_username} / (senha definida no ENV ou fallback)")
+
+
+# roda no import (funciona com gunicorn/render)
+init_db_and_seed_admin()
 
 
 # -------------------------------------------------
@@ -124,11 +240,15 @@ def admin_required(func):
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
-        username = request.form["username"]
-        password = request.form["password"]
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
 
         user = User.query.filter_by(username=username).first()
         if user and user.check_password(password):
+            if not user.is_active:
+                flash("Conta desativada. Contacte o administrador.", "danger")
+                return redirect(url_for("login"))
+
             login_user(user)
             flash("Login efetuado com sucesso!", "success")
             return redirect(url_for("dashboard"))
@@ -152,24 +272,19 @@ def logout():
 
 @app.route("/")
 def home():
-    # se já estiver logado, manda direto para o dashboard
     if current_user.is_authenticated:
         return redirect(url_for("dashboard"))
-    # se não estiver logado, mostra página inicial (landing page)
     return render_template("home.html")
 
 
 # -------------------------------------------------
-# DASHBOARD E INVESTIDORES
+# DASHBOARD E INVESTIDORES (LEITURA/gestor/admin)
 # -------------------------------------------------
 
 @app.route("/dashboard")
-@login_required
+@require_roles("admin", "gestor", "leitura")
 def dashboard():
-    # Listar todos os investidores
     investidores = Investor.query.all()
-
-    # Listar todos os investimentos
     investments = Investment.query.all()
 
     total_investido = sum(inv.valor_investido for inv in investments)
@@ -186,21 +301,18 @@ def dashboard():
     )
 
 
-# --------- ROTA COMPATÍVEL "UKAMBA" (CORRIGE O ERRO DO url_for('ukamba')) ---------
-
 @app.route("/ukamba")
-@login_required
+@require_roles("admin", "gestor", "leitura")
 def ukamba():
-    # Qualquer link antigo que aponte para 'ukamba' cai aqui
-    # e é redirecionado para o dashboard.
     return redirect(url_for("dashboard"))
 
 
 @app.route("/investidor/<int:investor_id>")
-@login_required
+@require_roles("admin", "gestor", "leitura")
 def investor_detail(investor_id):
     investor = Investor.query.get_or_404(investor_id)
     investments = investor.investments
+
     total_investido = sum(inv.valor_investido for inv in investments)
     total_reembolsado = sum(inv.valor_reembolsado for inv in investments)
     total_em_falta = sum(inv.valor_em_falta() for inv in investments)
@@ -215,10 +327,8 @@ def investor_detail(investor_id):
     )
 
 
-# --------- RELATÓRIO / COMPROVATIVO POR INVESTIDOR ---------
-
 @app.route("/investidor/<int:investor_id>/relatorio")
-@login_required
+@require_roles("admin", "gestor", "leitura")
 def investor_report(investor_id):
     investor = Investor.query.get_or_404(investor_id)
     investments = investor.investments
@@ -240,11 +350,11 @@ def investor_report(investor_id):
 
 
 # -------------------------------------------------
-# NOVO INVESTIDOR / NOVO INVESTIMENTO
+# NOVO INVESTIDOR / NOVO INVESTIMENTO (gestor/admin)
 # -------------------------------------------------
 
 @app.route("/novo_investidor", methods=["GET", "POST"])
-@login_required
+@require_roles("admin", "gestor")
 def new_investor():
     if request.method == "POST":
         nome = request.form["nome"]
@@ -253,6 +363,7 @@ def new_investor():
         investor = Investor(nome=nome, profissao=profissao)
         db.session.add(investor)
         db.session.commit()
+
         flash("Investidor criado com sucesso!", "success")
         return redirect(url_for("dashboard"))
 
@@ -260,31 +371,26 @@ def new_investor():
 
 
 @app.route("/novo_investimento/<int:investor_id>", methods=["GET", "POST"])
-@login_required
+@require_roles("admin", "gestor")
 def new_investment(investor_id):
     investor = Investor.query.get_or_404(investor_id)
 
     if request.method == "POST":
         plano = request.form["plano"]
-
-        # valor investido
         valor_investido = float(request.form["valor_investido"])
         meses = int(request.form["meses"])
 
-        # -----------------------------
-        # DEFINIÇÃO DA TAXA MENSAL POR FAIXA
-        # -----------------------------
+        # taxa mensal por faixa
         if valor_investido >= 1_000_000:
-            taxa_mensal = 0.03      # 3% ao mês
+            taxa_mensal = 0.03
         elif 500_000 <= valor_investido <= 999_999:
-            taxa_mensal = 0.025     # 2,5% ao mês
+            taxa_mensal = 0.025
         elif 100_000 <= valor_investido <= 499_999:
-            taxa_mensal = 0.02      # 2% ao mês
+            taxa_mensal = 0.02
         else:
             flash("Valor mínimo para investimento é 100.000 Kz.", "danger")
             return redirect(url_for("new_investment", investor_id=investor.id))
 
-        # juros compostos: taxa total no período
         taxa_juro = (1 + taxa_mensal) ** meses - 1
 
         data_inicio = datetime.strptime(request.form["data_inicio"], "%Y-%m-%d").date()
@@ -299,8 +405,10 @@ def new_investment(investor_id):
             data_inicio=data_inicio,
             data_fim=data_fim,
         )
+
         db.session.add(investment)
         db.session.commit()
+
         flash("Investimento registado com sucesso!", "success")
         return redirect(url_for("investor_detail", investor_id=investor.id))
 
@@ -308,69 +416,54 @@ def new_investment(investor_id):
 
 
 # -------------------------------------------------
-# DELETAR INVESTIMENTO
+# DELETAR INVESTIMENTO (somente admin)
 # -------------------------------------------------
 
 @app.route("/investimento/<int:investment_id>/deletar", methods=["POST"])
-@login_required
+@require_roles("admin")
 def delete_investment(investment_id):
     investment = Investment.query.get_or_404(investment_id)
     investor_id = investment.investor_id
 
     db.session.delete(investment)
     db.session.commit()
-    flash("Investimento apagado com sucesso!", "info")
 
-    # volta para a página do investidor dono do investimento
+    flash("Investimento apagado com sucesso!", "info")
     return redirect(url_for("investor_detail", investor_id=investor_id))
 
 
 # -------------------------------------------------
-# RELATÓRIOS GERAIS
+# RELATÓRIOS GERAIS (leitura/gestor/admin)
 # -------------------------------------------------
 
 @app.route("/relatorios")
-@login_required
+@require_roles("admin", "gestor", "leitura")
 def relatorios():
     investments = Investment.query.all()
     investidores = Investor.query.all()
     hoje = datetime.utcnow().date()
 
-    # --- Totais gerais ---
     total_investido = sum(inv.valor_investido for inv in investments)
     total_reembolsado = sum(inv.valor_reembolsado for inv in investments)
     total_a_recuperar = sum(inv.valor_em_falta() for inv in investments)
 
-    # montante em atraso
-    total_atrasado = sum(
-        inv.valor_em_falta() for inv in investments if inv.esta_atrasado()
-    )
+    total_atrasado = sum(inv.valor_em_falta() for inv in investments if inv.esta_atrasado())
 
-    # investimentos ativos (ainda há valor em falta)
     investimentos_ativos = [inv for inv in investments if inv.valor_em_falta() > 0]
     num_investimentos_ativos = len(investimentos_ativos)
 
-    # nº de investidores e ticket médio
     num_investidores = len(investidores)
-    media_por_investidor = (
-        total_investido / num_investidores if num_investidores > 0 else 0
-    )
+    media_por_investidor = (total_investido / num_investidores) if num_investidores > 0 else 0
 
-    # percentagem já recuperada em relação ao total previsto (capital+juros)
     total_previsto = sum(inv.valor_total_a_receber() for inv in investments)
-    perc_recuperado = (
-        (total_reembolsado / total_previsto) * 100 if total_previsto > 0 else 0
-    )
+    perc_recuperado = ((total_reembolsado / total_previsto) * 100) if total_previsto > 0 else 0
 
-    # --- Listas especiais ---
     investimentos_atrasados = [inv for inv in investments if inv.esta_atrasado()]
     a_vencer_30_dias = [
-        inv
-        for inv in investments
+        inv for inv in investments
         if 0 <= (inv.data_fim - hoje).days <= 30 and inv.valor_em_falta() > 0
     ]
 
-    # --- Resumo por investidor ---
     resumo_investidores = []
     for invs in investidores:
         invs_investments = [i for i in investments if i.investor_id == invs.id]
@@ -382,20 +475,17 @@ def relatorios():
         valor_em_falta_inv = sum(i.valor_em_falta() for i in invs_investments)
         atrasado_inv = any(i.esta_atrasado() for i in invs_investments)
 
-        resumo_investidores.append(
-            {
-                "investor": invs,
-                "qtd": len(invs_investments),
-                "valor_investido": valor_investido_inv,
-                "valor_reembolsado": valor_reembolsado_inv,
-                "valor_em_falta": valor_em_falta_inv,
-                "atrasado": atrasado_inv,
-            }
-        )
+        resumo_investidores.append({
+            "investor": invs,
+            "qtd": len(invs_investments),
+            "valor_investido": valor_investido_inv,
+            "valor_reembolsado": valor_reembolsado_inv,
+            "valor_em_falta": valor_em_falta_inv,
+            "atrasado": atrasado_inv,
+        })
 
     return render_template(
         "relatorios.html",
-        # totais principais
         total_investido=total_investido,
         total_reembolsado=total_reembolsado,
         total_a_recuperar=total_a_recuperar,
@@ -404,7 +494,6 @@ def relatorios():
         num_investidores=num_investidores,
         media_por_investidor=media_por_investidor,
         perc_recuperado=perc_recuperado,
-        # listas
         investimentos_atrasados=investimentos_atrasados,
         a_vencer_30_dias=a_vencer_30_dias,
         resumo_investidores=resumo_investidores,
@@ -412,31 +501,29 @@ def relatorios():
 
 
 # -------------------------------------------------
-# EXPORTAR PARA EXCEL
+# EXPORTAR PARA EXCEL (admin e gestor)
 # -------------------------------------------------
 
 @app.route("/exportar/excel")
-@login_required
+@require_roles("admin", "gestor")
 def exportar_excel():
     investments = Investment.query.all()
 
     dados = []
     for inv in investments:
-        dados.append(
-            {
-                "Investidor": inv.investor.nome,
-                "Plano": inv.plano,
-                "Valor investido": inv.valor_investido,
-                "Taxa juro (total período)": inv.taxa_juro,
-                "Meses": inv.meses,
-                "Data início": inv.data_inicio,
-                "Data fim": inv.data_fim,
-                "Valor reembolsado": inv.valor_reembolsado,
-                "Valor em falta": inv.valor_em_falta(),
-                "Dias restantes": inv.dias_restantes(),
-                "Atrasado": "Sim" if inv.esta_atrasado() else "Não",
-            }
-        )
+        dados.append({
+            "Investidor": inv.investor.nome,
+            "Plano": inv.plano,
+            "Valor investido": inv.valor_investido,
+            "Taxa juro (total período)": inv.taxa_juro,
+            "Meses": inv.meses,
+            "Data início": inv.data_inicio,
+            "Data fim": inv.data_fim,
+            "Valor reembolsado": inv.valor_reembolsado,
+            "Valor em falta": inv.valor_em_falta(),
+            "Dias restantes": inv.dias_restantes(),
+            "Atrasado": "Sim" if inv.esta_atrasado() else "Não",
+        })
 
     df = pd.DataFrame(dados)
 
@@ -454,26 +541,77 @@ def exportar_excel():
 
 
 # -------------------------------------------------
-# APP (CRIA BD E USUÁRIO ADMIN)
+# ADMIN: GERIR UTILIZADORES (somente admin)
+# -------------------------------------------------
+
+@app.route("/admin/users", methods=["GET", "POST"])
+@require_roles("admin")
+def admin_users():
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "").strip()
+        role = request.form.get("role", "leitura").strip()
+
+        if role not in ("admin", "gestor", "leitura"):
+            flash("Role inválida.", "danger")
+            return redirect(url_for("admin_users"))
+
+        if not username or not password:
+            flash("Preencha username e password.", "danger")
+            return redirect(url_for("admin_users"))
+
+        existing = User.query.filter_by(username=username).first()
+        if existing:
+            flash("Já existe um utilizador com esse username.", "warning")
+            return redirect(url_for("admin_users"))
+
+        u = User(username=username, role=role, is_active=True)
+        u.set_password(password)
+        db.session.add(u)
+        db.session.commit()
+
+        flash("Utilizador criado com sucesso!", "success")
+        return redirect(url_for("admin_users"))
+
+    users = User.query.order_by(User.id.desc()).all()
+    return render_template("admin_users.html", users=users)
+
+
+@app.route("/admin/users/<int:user_id>/toggle", methods=["POST"])
+@require_roles("admin")
+def admin_toggle_user(user_id):
+    u = User.query.get_or_404(user_id)
+
+    if u.id == current_user.id:
+        flash("Não pode desativar o utilizador atual.", "warning")
+        return redirect(url_for("admin_users"))
+
+    u.is_active = not u.is_active
+    db.session.commit()
+    flash("Estado do utilizador atualizado.", "success")
+    return redirect(url_for("admin_users"))
+
+
+@app.route("/admin/users/<int:user_id>/reset_password", methods=["POST"])
+@require_roles("admin")
+def admin_reset_password(user_id):
+    u = User.query.get_or_404(user_id)
+
+    new_password = request.form.get("new_password", "").strip()
+    if not new_password:
+        flash("Nova password vazia.", "danger")
+        return redirect(url_for("admin_users"))
+
+    u.set_password(new_password)
+    db.session.commit()
+    flash("Password atualizada com sucesso.", "success")
+    return redirect(url_for("admin_users"))
+
+
+# -------------------------------------------------
+# RUN LOCAL
 # -------------------------------------------------
 
 if __name__ == "__main__":
-    with app.app_context():
-        # cria as tabelas se ainda não existirem
-        db.create_all()
-
-        # Verifica se já existe usuário admin
-        admin = User.query.filter_by(username="admin").first()
-        if not admin:
-            admin = User(
-                username="admin",
-                role="admin",
-            )
-            admin.set_password("123456")
-            db.session.add(admin)
-            db.session.commit()
-            print("Usuário admin criado com sucesso: admin / 123456")
-        else:
-            print("Usuário admin já existe.")
-
-    app.run(debug=True)
+    debug = os.environ.get("DEBUG", "0") == "1"
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "5000")), debug=debug)
