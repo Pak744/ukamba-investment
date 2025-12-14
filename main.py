@@ -245,6 +245,17 @@ init_db_and_seed_admin()
 
 
 # -------------------------------------------------
+# HELPERS
+# -------------------------------------------------
+
+def _safe_int(v, default=None):
+    try:
+        return int(v)
+    except Exception:
+        return default
+
+
+# -------------------------------------------------
 # AUTH
 # -------------------------------------------------
 
@@ -296,15 +307,32 @@ def home():
 @app.route("/dashboard")
 @require_roles("admin", "gestor", "leitura")
 def dashboard():
+    # ativos/inativos
     show_inactive = request.args.get("show_inactive", "0") == "1"
 
+    # ✅ período estratégico (default 30 dias)
+    period_raw = request.args.get("period", "30").strip().lower()
+    period_days = None if period_raw in ("all", "todos", "0") else _safe_int(period_raw, 30)
+
+    hoje = datetime.utcnow().date()
+    start_date = (hoje - timedelta(days=period_days)) if period_days else None
+
+    # investidores (mantém como está)
     if show_inactive:
         investidores = Investor.query.order_by(Investor.id.desc()).all()
     else:
         investidores = Investor.query.filter_by(is_active=True).order_by(Investor.id.desc()).all()
 
-    investments = Investment.query.all()
+    # investments (geral)
+    investments_all = Investment.query.all()
 
+    # ✅ filtro por período (por data_inicio)
+    if start_date:
+        investments_period = [inv for inv in investments_all if inv.data_inicio >= start_date]
+    else:
+        investments_period = list(investments_all)
+
+    # ordenação operacional (para tabela)
     def prioridade(inv: Investment):
         dias = inv.dias_restantes()
         em_falta = inv.valor_em_falta()
@@ -315,22 +343,46 @@ def dashboard():
             tier = 1
         else:
             tier = 2
-
         return (tier, dias)
 
-    investments = sorted(investments, key=prioridade)
+    investments_sorted = sorted(investments_all, key=prioridade)
 
-    total_investido = sum(inv.valor_investido for inv in investments)
-    total_reembolsado = sum(inv.valor_reembolsado for inv in investments)
-    total_a_recuperar = sum(inv.valor_em_falta() for inv in investments)
+    # totais gerais (como já tinhas)
+    total_investido = sum(inv.valor_investido for inv in investments_all)
+    total_reembolsado = sum(inv.valor_reembolsado for inv in investments_all)
+    total_a_recuperar = sum(inv.valor_em_falta() for inv in investments_all)
+
+    # ✅ totais do período (novo)
+    total_investido_p = sum(inv.valor_investido for inv in investments_period)
+    total_reembolsado_p = sum(inv.valor_reembolsado for inv in investments_period)
+    total_a_recuperar_p = sum(inv.valor_em_falta() for inv in investments_period)
+    total_atrasado_p = sum(inv.valor_em_falta() for inv in investments_period if inv.esta_atrasado())
+
+    # label amigável
+    if period_days is None:
+        period_label = "Todos"
+    else:
+        period_label = f"Últimos {period_days} dias"
 
     return render_template(
         "index.html",
         investidores=investidores,
-        investments=investments,
+        investments=investments_sorted,
+
         total_investido=total_investido,
         total_reembolsado=total_reembolsado,
         total_a_recuperar=total_a_recuperar,
+
+        # ✅ novos indicadores por período
+        period_raw=period_raw,
+        period_days=period_days,
+        period_label=period_label,
+        start_date=start_date,
+        total_investido_p=total_investido_p,
+        total_reembolsado_p=total_reembolsado_p,
+        total_a_recuperar_p=total_a_recuperar_p,
+        total_atrasado_p=total_atrasado_p,
+
         show_inactive=show_inactive
     )
 

@@ -29,7 +29,90 @@
   </div>
 </div>
 
-<!-- Cards de resumo -->
+<!-- ✅ INDICADORES POR PERÍODO (PONTO 1) -->
+<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+  <div class="text-white">
+    <div class="fw-semibold">Indicadores estratégicos</div>
+    <div class="small" style="opacity:0.9;">
+      Período selecionado: <span class="fw-semibold">{{ period_label }}</span>
+      {% if start_date %} (desde {{ start_date }}) {% endif %}
+    </div>
+  </div>
+
+  <div class="btn-group" role="group" aria-label="Período">
+    <a class="btn btn-sm {% if period_raw == '30' %}btn-warning{% else %}btn-outline-light{% endif %}"
+       href="{{ url_for('dashboard', period=30) }}">30 dias</a>
+
+    <a class="btn btn-sm {% if period_raw == '90' %}btn-warning{% else %}btn-outline-light{% endif %}"
+       href="{{ url_for('dashboard', period=90) }}">90 dias</a>
+
+    <a class="btn btn-sm {% if period_raw == '365' %}btn-warning{% else %}btn-outline-light{% endif %}"
+       href="{{ url_for('dashboard', period=365) }}">365 dias</a>
+
+    <a class="btn btn-sm {% if period_raw in ['all','todos','0'] %}btn-warning{% else %}btn-outline-light{% endif %}"
+       href="{{ url_for('dashboard', period='all') }}">Todos</a>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-md-3 col-6">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center">
+          <div>
+            <div class="text-muted small">Investido (período)</div>
+            <div class="fw-bold">{{ "{:,.2f}".format(total_investido_p) }} Kz</div>
+          </div>
+          <i class="bi bi-piggy-bank-fill fs-4 text-warning"></i>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-3 col-6">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center">
+          <div>
+            <div class="text-muted small">Reembolsado (período)</div>
+            <div class="fw-bold">{{ "{:,.2f}".format(total_reembolsado_p) }} Kz</div>
+          </div>
+          <i class="bi bi-cash-coin fs-4 text-success"></i>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-3 col-6">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center">
+          <div>
+            <div class="text-muted small">A recuperar (período)</div>
+            <div class="fw-bold">{{ "{:,.2f}".format(total_a_recuperar_p) }} Kz</div>
+          </div>
+          <i class="bi bi-exclamation-triangle-fill fs-4 text-danger"></i>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-3 col-6">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center">
+          <div>
+            <div class="text-muted small">Atrasado (período)</div>
+            <div class="fw-bold">{{ "{:,.2f}".format(total_atrasado_p) }} Kz</div>
+          </div>
+          <i class="bi bi-clock-history fs-4 text-danger"></i>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Cards de resumo (GERAL — como já tinhas) -->
 <div class="row g-3 mb-4">
   <div class="col-md-4">
     <div class="card card-dashboard">
@@ -154,30 +237,15 @@
   </div>
 </div>
 
-<!-- Atalhos no mobile -->
-<div class="d-md-none mb-3">
-  {% if current_user.role in ["admin", "gestor"] %}
-  <a href="{{ url_for('new_investor') }}" class="btn btn-primary btn-sm me-2 mb-2">
-    <i class="bi bi-person-plus me-1"></i> Novo investidor
-  </a>
-  {% endif %}
-
-  <a href="{{ url_for('exportar_excel') }}" class="btn btn-outline-primary btn-sm mb-2">
-    <i class="bi bi-file-earmark-excel me-1"></i> Exportar Excel
-  </a>
-</div>
-
 <!-- SECÇÃO DE INVESTIDORES -->
 <div class="d-flex justify-content-between align-items-center mb-2">
   <h4 class="mb-0">Investidores</h4>
 
-  <!-- ✅ Link rápido para a tela só de investidores -->
   <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('investidores_page') }}">
     <i class="bi bi-arrow-right me-1"></i>Ver todos
   </a>
 </div>
 
-<!-- ✅ PESQUISA (AGORA NO LUGAR CERTO: INVESTIDORES) -->
 {% if investidores %}
 <div class="row g-2 mb-3">
   <div class="col-md-6">
@@ -219,8 +287,6 @@
           <span class="text-muted">—</span>
           {% endif %}
         </td>
-
-        <!-- ID escondido para pesquisa -->
         <td class="d-none dash-inv-id">{{ invst.id }}</td>
       </tr>
       {% endfor %}
@@ -235,7 +301,6 @@
 <div class="d-flex justify-content-between align-items-center mb-2 mt-4">
   <h4 class="mb-0">Investimentos</h4>
 
-  <!-- ✅ Links rápidos -->
   <div class="d-flex gap-2">
     <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('investimentos_ativos') }}">
       Em curso
@@ -288,7 +353,6 @@
         </td>
 
         <td class="text-end">
-          <!-- ✅ PAGAR TOTAL (admin/gestor) -->
           {% if current_user.role in ["admin", "gestor"] %}
           <form method="post"
                 action="{{ url_for('pay_in_full', investment_id=inv.id) }}"
@@ -300,7 +364,6 @@
           </form>
           {% endif %}
 
-          <!-- ✅ APAGAR (somente admin) -->
           {% if current_user.role == "admin" %}
           <form method="post"
                 action="{{ url_for('delete_investment', investment_id=inv.id) }}"
@@ -325,7 +388,6 @@
 <p>Nenhum investimento registado ainda.</p>
 {% endif %}
 
-<!-- ✅ SCRIPT: FILTRO DA PESQUISA (Investidores no Dashboard) -->
 <script>
   (function () {
     const input = document.getElementById("dashInvestorSearch");
