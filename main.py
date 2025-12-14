@@ -433,6 +433,29 @@ def delete_investment(investment_id):
 
 
 # -------------------------------------------------
+# ✅ MARCAR INVESTIMENTO COMO PAGO (TOTAL) (admin e gestor)
+# -------------------------------------------------
+
+@app.route("/investimento/<int:investment_id>/pagar_total", methods=["POST"])
+@require_roles("admin", "gestor")
+def pay_in_full(investment_id):
+    investment = Investment.query.get_or_404(investment_id)
+
+    total_previsto = float(investment.valor_total_a_receber())
+
+    # Se já estiver pago, não faz nada
+    if float(investment.valor_reembolsado) >= total_previsto:
+        flash("Este investimento já está marcado como pago.", "info")
+        return redirect(url_for("investor_detail", investor_id=investment.investor_id))
+
+    investment.valor_reembolsado = total_previsto
+    db.session.commit()
+
+    flash("✅ Investimento marcado como PAGO (total) com sucesso!", "success")
+    return redirect(url_for("investor_detail", investor_id=investment.investor_id))
+
+
+# -------------------------------------------------
 # RELATÓRIOS GERAIS (leitura/gestor/admin)
 # -------------------------------------------------
 

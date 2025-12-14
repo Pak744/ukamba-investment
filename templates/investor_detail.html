@@ -51,10 +51,13 @@
     <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary btn-sm me-2">
       Voltar
     </a>
+
+    {% if current_user.role in ["admin", "gestor"] %}
     <a href="{{ url_for('new_investment', investor_id=investor.id) }}"
        class="btn btn-primary btn-sm">
       + Novo investimento
     </a>
+    {% endif %}
   </div>
 
   <a href="{{ url_for('investor_report', investor_id=investor.id) }}"
@@ -102,7 +105,23 @@
             <span class="badge bg-success">Em dia</span>
           {% endif %}
         </td>
+
         <td class="text-end">
+
+          <!-- ✅ PAGAR TOTAL (admin/gestor) -->
+          {% if current_user.role in ["admin", "gestor"] %}
+          <form method="post"
+                action="{{ url_for('pay_in_full', investment_id=inv.id) }}"
+                onsubmit="return confirm('Confirmar PAGAMENTO TOTAL deste investimento?');"
+                class="d-inline">
+            <button type="submit" class="btn btn-sm btn-success me-1">
+              <i class="bi bi-check2-circle me-1"></i>Pagar total
+            </button>
+          </form>
+          {% endif %}
+
+          <!-- ✅ APAGAR (somente admin) -->
+          {% if current_user.role == "admin" %}
           <form method="post"
                 action="{{ url_for('delete_investment', investment_id=inv.id) }}"
                 onsubmit="return confirm('Tem certeza que deseja apagar este investimento?');"
@@ -111,6 +130,8 @@
               Apagar
             </button>
           </form>
+          {% endif %}
+
         </td>
       </tr>
       {% endfor %}
