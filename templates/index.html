@@ -103,8 +103,31 @@
 </div>
 
 {% if investidores %}
+
+<!-- 🔎 Pesquisa de investidores -->
+<div class="row g-2 align-items-center mb-3">
+  <div class="col-md-6">
+    <div class="input-group">
+      <span class="input-group-text"><i class="bi bi-search"></i></span>
+      <input
+        id="investorSearch"
+        type="text"
+        class="form-control"
+        placeholder="Pesquisar investidor (nome ou profissão)..."
+        autocomplete="off"
+      >
+      <button id="clearInvestorSearch" class="btn btn-outline-secondary" type="button" title="Limpar">
+        <i class="bi bi-x-lg"></i>
+      </button>
+    </div>
+    <div class="form-text">
+      <span id="investorCount">0</span> de <span id="investorTotal">0</span> investidores
+    </div>
+  </div>
+</div>
+
 <div class="table-dashboard mb-4">
-  <table class="table table-hover mb-0">
+  <table class="table table-hover mb-0" id="investorTable">
     <thead>
       <tr>
         <th>Nome</th>
@@ -115,13 +138,13 @@
     </thead>
     <tbody>
       {% for invst in investidores %}
-      <tr>
-        <td>
+      <tr class="investor-row">
+        <td class="inv-nome">
           <a href="{{ url_for('investor_detail', investor_id=invst.id) }}">
             {{ invst.nome }}
           </a>
         </td>
-        <td>{{ invst.profissao or "-" }}</td>
+        <td class="inv-prof">{{ invst.profissao or "-" }}</td>
         <td>{{ invst.numero_investimentos }}</td>
         <td class="text-end">
           <a href="{{ url_for('new_investment', investor_id=invst.id) }}"
@@ -133,7 +156,61 @@
       {% endfor %}
     </tbody>
   </table>
+
+  <!-- Mensagem quando não há resultados -->
+  <div id="noInvestorResults" class="p-3 text-muted" style="display:none;">
+    Nenhum investidor encontrado com esse termo.
+  </div>
 </div>
+
+<script>
+  (function () {
+    const input = document.getElementById("investorSearch");
+    const clearBtn = document.getElementById("clearInvestorSearch");
+    const rows = Array.from(document.querySelectorAll("#investorTable tbody .investor-row"));
+    const countEl = document.getElementById("investorCount");
+    const totalEl = document.getElementById("investorTotal");
+    const emptyEl = document.getElementById("noInvestorResults");
+
+    totalEl.textContent = rows.length.toString();
+
+    function normalize(s) {
+      return (s || "")
+        .toString()
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "");
+    }
+
+    function applyFilter() {
+      const q = normalize(input.value.trim());
+      let visible = 0;
+
+      rows.forEach(row => {
+        const nome = normalize(row.querySelector(".inv-nome")?.textContent);
+        const prof = normalize(row.querySelector(".inv-prof")?.textContent);
+        const match = !q || nome.includes(q) || prof.includes(q);
+
+        row.style.display = match ? "" : "none";
+        if (match) visible++;
+      });
+
+      countEl.textContent = visible.toString();
+      emptyEl.style.display = visible === 0 ? "" : "none";
+    }
+
+    // inicial
+    countEl.textContent = rows.length.toString();
+
+    input.addEventListener("input", applyFilter);
+    clearBtn.addEventListener("click", () => {
+      input.value = "";
+      input.focus();
+      applyFilter();
+    });
+  })();
+</script>
+
 {% else %}
 <p>Nenhum investidor registado ainda.</p>
 {% endif %}
