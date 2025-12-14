@@ -46,7 +46,7 @@
   </div>
 </div>
 
-<div class="d-flex justify-content-between align-items-center mb-3">
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
   <div>
     <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary btn-sm me-2">
       Voltar
@@ -60,10 +60,24 @@
     {% endif %}
   </div>
 
-  <a href="{{ url_for('investor_report', investor_id=investor.id) }}"
-     class="btn btn-outline-primary btn-sm" target="_blank">
-    Comprovativo / relatório
-  </a>
+  <div class="d-flex align-items-center gap-2">
+    <a href="{{ url_for('investor_report', investor_id=investor.id) }}"
+       class="btn btn-outline-primary btn-sm" target="_blank">
+      Comprovativo / relatório
+    </a>
+
+    <!-- ✅ APAGAR INVESTIDOR (somente admin) -->
+    {% if current_user.role == "admin" %}
+    <form method="post"
+          action="{{ url_for('delete_investor', investor_id=investor.id) }}"
+          onsubmit="return confirm('TEM CERTEZA?\n\nIsto vai apagar o investidor e TODOS os investimentos dele.\nEsta ação NÃO pode ser desfeita.');"
+          class="d-inline">
+      <button type="submit" class="btn btn-sm btn-danger">
+        <i class="bi bi-person-x-fill me-1"></i>Apagar investidor
+      </button>
+    </form>
+    {% endif %}
+  </div>
 </div>
 
 <h4 class="mb-2">Investimentos</h4>
@@ -120,7 +134,7 @@
           </form>
           {% endif %}
 
-          <!-- ✅ APAGAR (somente admin) -->
+          <!-- ✅ APAGAR INVESTIMENTO (somente admin) -->
           {% if current_user.role == "admin" %}
           <form method="post"
                 action="{{ url_for('delete_investment', investment_id=inv.id) }}"

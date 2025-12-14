@@ -172,10 +172,8 @@ def ensure_user_table_columns():
     # --- is_active ---
     if "is_active" not in cols:
         try:
-            # Postgres (tabela "user" precisa de aspas)
             db.session.execute(text('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE'))
         except Exception:
-            # SQLite fallback (não tem IF NOT EXISTS)
             try:
                 db.session.execute(text("ALTER TABLE user ADD COLUMN is_active BOOLEAN DEFAULT 1"))
             except Exception:
@@ -210,16 +208,12 @@ def init_db_and_seed_admin():
         # 🔧 garante colunas ANTES de consultar User.query (evita crash no Render)
         ensure_user_table_columns()
 
-        # Admin inicial via env (mais seguro)
-        # Configure no Render:
-        # ADMIN_USERNAME, ADMIN_PASSWORD
         admin_username = os.environ.get("ADMIN_USERNAME", "admin")
         admin_password = os.environ.get("ADMIN_PASSWORD", None)
 
         existing_admin = User.query.filter_by(username=admin_username).first()
         if not existing_admin:
             if not admin_password:
-                # fallback dev
                 admin_password = "123456"
 
             u = User(username=admin_username, role="admin", is_active=True)
@@ -229,7 +223,6 @@ def init_db_and_seed_admin():
             print(f"[OK] Admin criado: {admin_username} / (senha definida no ENV ou fallback)")
 
 
-# roda no import (funciona com gunicorn/render)
 init_db_and_seed_admin()
 
 
@@ -443,7 +436,6 @@ def pay_in_full(investment_id):
 
     total_previsto = float(investment.valor_total_a_receber())
 
-    # Se já estiver pago, não faz nada
     if float(investment.valor_reembolsado) >= total_previsto:
         flash("Este investimento já está marcado como pago.", "info")
         return redirect(url_for("investor_detail", investor_id=investment.investor_id))
@@ -453,6 +445,26 @@ def pay_in_full(investment_id):
 
     flash("✅ Investimento marcado como PAGO (total) com sucesso!", "success")
     return redirect(url_for("investor_detail", investor_id=investment.investor_id))
+
+
+# -------------------------------------------------
+# ✅ DELETAR INVESTIDOR (somente admin)
+# - Apaga também todos os investimentos do investidor
+# -------------------------------------------------
+
+@app.route("/investidor/<int:investor_id>/deletar", methods=["POST"])
+@require_roles("admin")
+def delete_investor(investor_id):
+    investor = Investor.query.get_or_404(investor_id)
+
+    # apaga investimentos antes (evita erro de FK no Postgres)
+    Investment.query.filter_by(investor_id=investor.id).delete(synchronize_session=False)
+
+    db.session.delete(investor)
+    db.session.commit()
+
+    flash("Investidor apagado com sucesso!", "info")
+    return redirect(url_for("dashboard"))
 
 
 # -------------------------------------------------
