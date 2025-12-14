@@ -120,8 +120,8 @@ class ActionLog(db.Model):
     user_id = db.Column(db.Integer, nullable=True)
     username = db.Column(db.String(80), nullable=True)
 
-    action = db.Column(db.String(60), nullable=False)       # ex: DELETE_INVESTOR
-    entity = db.Column(db.String(60), nullable=False)       # ex: Investor, Investment, User
+    action = db.Column(db.String(60), nullable=False)
+    entity = db.Column(db.String(60), nullable=False)
     entity_id = db.Column(db.Integer, nullable=True)
     details = db.Column(db.Text, nullable=True)
 
@@ -208,7 +208,6 @@ def init_db_and_seed_admin():
     with app.app_context():
         db.create_all()
 
-        # ✅ garantir colunas novas em tabelas antigas
         ensure_columns("user", [
             ("is_active",
              'ALTER TABLE "user" ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE',
@@ -227,7 +226,6 @@ def init_db_and_seed_admin():
              "ALTER TABLE investor ADD COLUMN deleted_at DATETIME"),
         ])
 
-        # admin inicial
         admin_username = os.environ.get("ADMIN_USERNAME", "admin")
         admin_password = os.environ.get("ADMIN_PASSWORD", None)
 
@@ -298,7 +296,6 @@ def home():
 @app.route("/dashboard")
 @require_roles("admin", "gestor", "leitura")
 def dashboard():
-    # Por padrão, escondemos investidores desativados
     show_inactive = request.args.get("show_inactive", "0") == "1"
 
     if show_inactive:
@@ -308,7 +305,6 @@ def dashboard():
 
     investments = Investment.query.all()
 
-    # ✅ ORDENAÇÃO OPERACIONAL (Atrasado -> A vencer -> Em dia; mais urgente primeiro)
     def prioridade(inv: Investment):
         dias = inv.dias_restantes()
         em_falta = inv.valor_em_falta()
@@ -346,20 +342,34 @@ def ukamba():
 
 
 # -------------------------------------------------
-# ✅ NOVAS TELAS (separadas)
+# ✅ TELAS SEPARADAS
 # -------------------------------------------------
 
 @app.route("/investidores")
 @require_roles("admin", "gestor", "leitura")
 def investidores_page():
     show_inactive = request.args.get("show_inactive", "0") == "1"
+    q = request.args.get("q", "").strip()
 
-    if show_inactive:
-        investidores = Investor.query.order_by(Investor.id.desc()).all()
-    else:
-        investidores = Investor.query.filter_by(is_active=True).order_by(Investor.id.desc()).all()
+    query = Investor.query
 
-    return render_template("investidores.html", investidores=investidores, show_inactive=show_inactive)
+    if not show_inactive:
+        query = query.filter_by(is_active=True)
+
+    if q:
+        query = query.filter(
+            Investor.nome.ilike(f"%{q}%") |
+            Investor.profissao.ilike(f"%{q}%")
+        )
+
+    investidores = query.order_by(Investor.id.desc()).all()
+
+    return render_template(
+        "investidores.html",
+        investidores=investidores,
+        show_inactive=show_inactive,
+        q=q
+    )
 
 
 @app.route("/investimentos/ativos")
@@ -395,7 +405,6 @@ def investimentos_atrasados():
 def investor_detail(investor_id):
     investor = Investor.query.get_or_404(investor_id)
 
-    # leitura não deve abrir investidor desativado (para não confundir)
     if investor.is_active is False and current_user.role != "admin":
         flash("Este investidor está desativado.", "warning")
         return redirect(url_for("dashboard"))
@@ -557,7 +566,6 @@ def pay_in_full(investment_id):
 def delete_investor(investor_id):
     investor = Investor.query.get_or_404(investor_id)
 
-    # ✅ PROTEÇÃO: se existir investimento em aberto, bloqueia
     open_investments = [inv for inv in investor.investments if inv.valor_em_falta() > 0]
     if open_investments:
         flash("❌ Não pode apagar: este investidor ainda tem investimentos EM ABERTO.", "danger")
@@ -682,7 +690,7 @@ def exportar_excel():
 
 
 # -------------------------------------------------
-# ADMIN: BACKUP COMPLETO (Excel com várias abas)
+# ADMIN: BACKUP COMPLETO
 # -------------------------------------------------
 
 @app.route("/admin/backup/excel")

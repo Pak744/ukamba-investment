@@ -1,23 +1,48 @@
 {% extends "base.html" %}
+
 {% block content %}
 
-<h2 class="mb-3">Investidores</h2>
+<div class="d-flex justify-content-between align-items-start mb-3">
+  <div>
+    <h2 class="section-header mb-1">Investidores</h2>
+    <p class="section-subtitle mb-0">
+      Lista completa de investidores (com pesquisa rápida).
+    </p>
+  </div>
 
-<div class="d-flex justify-content-between align-items-center mb-3">
-  <p class="text-muted mb-0">
-    Lista de investidores registados no sistema.
-  </p>
+  <div class="text-end d-none d-md-block">
+    {% if current_user.role in ["admin", "gestor"] %}
+      <a href="{{ url_for('new_investor') }}" class="btn btn-primary btn-sm">
+        <i class="bi bi-person-plus me-1"></i>Novo investidor
+      </a>
+    {% endif %}
+  </div>
+</div>
 
-  {% if current_user.role in ["admin", "gestor"] %}
-  <a href="{{ url_for('new_investor') }}" class="btn btn-primary btn-sm">
-    <i class="bi bi-person-plus me-1"></i>Novo investidor
-  </a>
-  {% endif %}
+<div class="row g-2 mb-3">
+  <div class="col-md-8">
+    <div class="input-group">
+      <span class="input-group-text"><i class="bi bi-search"></i></span>
+      <input id="investorSearch" type="text" class="form-control"
+             placeholder="Pesquisar por nome, profissão ou ID...">
+    </div>
+  </div>
+
+  <div class="col-md-4 text-md-end">
+    <a class="btn btn-outline-primary btn-sm"
+       href="{{ url_for('investidores_page', show_inactive=('0' if show_inactive else '1')) }}">
+      {% if show_inactive %}
+        <i class="bi bi-eye-slash me-1"></i>Ocultar desativados
+      {% else %}
+        <i class="bi bi-eye me-1"></i>Mostrar desativados
+      {% endif %}
+    </a>
+  </div>
 </div>
 
 {% if investidores %}
-<div class="table-responsive">
-  <table class="table table-hover align-middle">
+<div class="table-dashboard">
+  <table class="table table-hover mb-0">
     <thead>
       <tr>
         <th>Nome</th>
@@ -27,36 +52,96 @@
         <th class="text-end">Ações</th>
       </tr>
     </thead>
-    <tbody>
-      {% for inv in investidores %}
-      <tr>
-        <td>
-          <a href="{{ url_for('investor_detail', investor_id=inv.id) }}">
-            {{ inv.nome }}
+
+    <tbody id="investorTableBody">
+      {% for invst in investidores %}
+      <tr class="investor-row">
+        <td class="inv-nome">
+          <a href="{{ url_for('investor_detail', investor_id=invst.id) }}">
+            {{ invst.nome }}
           </a>
         </td>
-        <td>{{ inv.profissao or "-" }}</td>
-        <td>{{ inv.numero_investimentos }}</td>
-        <td>
-          {% if inv.is_active %}
+        <td class="inv-prof">{{ invst.profissao or "-" }}</td>
+        <td class="inv-num">{{ invst.numero_investimentos }}</td>
+        <td class="inv-status">
+          {% if invst.is_active %}
             <span class="badge bg-success">Ativo</span>
           {% else %}
             <span class="badge bg-secondary">Desativado</span>
           {% endif %}
         </td>
-        <td class="text-end">
-          <a href="{{ url_for('investor_detail', investor_id=inv.id) }}"
-             class="btn btn-sm btn-outline-primary">
-            <i class="bi bi-eye"></i>
-          </a>
+
+        <td class="text-end inv-actions">
+          {% if current_user.role in ["admin", "gestor"] and invst.is_active %}
+            <a href="{{ url_for('new_investment', investor_id=invst.id) }}"
+               class="btn btn-sm btn-outline-primary me-1">
+              <i class="bi bi-plus-circle"></i>
+            </a>
+          {% endif %}
+
+          {% if current_user.role == "admin" and invst.is_active %}
+            <form method="post"
+                  action="{{ url_for('delete_investor', investor_id=invst.id) }}"
+                  onsubmit="return confirm('Tem certeza que deseja DESATIVAR este investidor? (soft delete)');"
+                  class="d-inline">
+              <button type="submit" class="btn btn-sm btn-outline-danger">
+                <i class="bi bi-person-x"></i>
+              </button>
+            </form>
+          {% endif %}
+
+          {% if current_user.role == "leitura" %}
+            <span class="text-muted">—</span>
+          {% endif %}
         </td>
+
+        <td class="d-none inv-id">{{ invst.id }}</td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
+
+<p id="noResults" class="text-muted mt-3 d-none">
+  Nenhum investidor encontrado.
+</p>
+
 {% else %}
-<p class="text-muted">Nenhum investidor encontrado.</p>
+<p class="text-muted">Nenhum investidor registado ainda.</p>
 {% endif %}
+
+<script>
+  (function () {
+    const input = document.getElementById("investorSearch");
+    const rows = Array.from(document.querySelectorAll(".investor-row"));
+    const noResults = document.getElementById("noResults");
+
+    function normalize(s) {
+      return (s || "").toString().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    }
+
+    function filter() {
+      const q = normalize(input.value.trim());
+      let visibleCount = 0;
+
+      rows.forEach(row => {
+        const nome = normalize(row.querySelector(".inv-nome")?.innerText);
+        const prof = normalize(row.querySelector(".inv-prof")?.innerText);
+        const id = normalize(row.querySelector(".inv-id")?.innerText);
+
+        const hit = !q || nome.includes(q) || prof.includes(q) || id.includes(q);
+        row.classList.toggle("d-none", !hit);
+        if (hit) visibleCount++;
+      });
+
+      if (noResults) noResults.classList.toggle("d-none", visibleCount !== 0);
+    }
+
+    if (input) {
+      input.addEventListener("input", filter);
+      filter();
+    }
+  })();
+</script>
 
 {% endblock %}

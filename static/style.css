@@ -5,7 +5,13 @@ body {
     min-height: 100vh;
     margin: 0;
     /* Fundo azul em degradê */
-    background: linear-gradient(180deg, #0D47A1 0%, #0D47A1 22%, #E3F2FD 22%, #E3F2FD 100%) !important;
+    background: linear-gradient(
+        180deg,
+        #0D47A1 0%,
+        #0D47A1 22%,
+        #E3F2FD 22%,
+        #E3F2FD 100%
+    ) !important;
     font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
@@ -28,7 +34,6 @@ body {
 /* ===============================
    CARDS DO DASHBOARD
    =============================== */
-
 .card-dashboard {
     border: none;
     border-radius: 18px;
@@ -47,7 +52,11 @@ body {
     content: "";
     position: absolute;
     inset: 0;
-    background: radial-gradient(circle at top right, rgba(255, 193, 7, 0.3), transparent 55%);
+    background: radial-gradient(
+        circle at top right,
+        rgba(255, 193, 7, 0.3),
+        transparent 55%
+    );
     opacity: 0.8;
     z-index: 1;
 }
@@ -113,7 +122,6 @@ body {
 /* ===============================
    TABELAS
    =============================== */
-
 .table-dashboard {
     background: #ffffff;
     border-radius: 18px;
@@ -136,7 +144,6 @@ body {
 /* ===============================
    BADGES DE STATUS
    =============================== */
-
 .badge {
     border-radius: 999px;
     font-weight: 500;
@@ -168,7 +175,6 @@ a.link-light-underline:hover {
 /* ===============================
    ALERTAS
    =============================== */
-
 .alert {
     border-radius: 12px;
     border: none;
@@ -180,4 +186,54 @@ a.link-light-underline:hover {
    =============================== */
 .card {
     border-radius: 16px;
+}
+
+/* ===============================
+   🔥 AJUSTE EXTRA — ATALHOS / CARDS CLICÁVEIS
+   (não quebra nada do que já existia)
+   =============================== */
+
+a.text-decoration-none .card {
+    transition: all 0.25s ease;
+    cursor: pointer;
+}
+
+a.text-decoration-none .card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 26px rgba(13, 71, 161, 0.22);
+}
+
+a.text-decoration-none .card i {
+    color: #0D47A1;
+    transition: color 0.25s ease;
+}
+
+a.text-decoration-none .card .fw-semibold {
+    color: #0D47A1;
+}
+
+a.text-decoration-none:hover .card {
+    border: 1px solid rgba(255, 193, 7, 0.45);
+    background: linear-gradient(
+        180deg,
+        #FFFFFF 0%,
+        #FFFDE7 100%
+    );
+}
+
+a.text-decoration-none:hover .card i {
+    color: #FFC107;
+}
+
+/* ===============================
+   MOBILE FINO
+   =============================== */
+@media (max-width: 768px) {
+    .card-dashboard {
+        border-radius: 16px;
+    }
+
+    a.text-decoration-none .card {
+        border-radius: 14px;
+    }
 }
