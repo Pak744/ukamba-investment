@@ -242,6 +242,7 @@ def init_db_and_seed_admin():
             db.session.commit()
             print(f"[OK] Admin criado: {admin_username}")
 
+
 init_db_and_seed_admin()
 
 
@@ -343,6 +344,51 @@ def dashboard():
 def ukamba():
     return redirect(url_for("dashboard"))
 
+
+# -------------------------------------------------
+# ✅ NOVAS TELAS (separadas)
+# -------------------------------------------------
+
+@app.route("/investidores")
+@require_roles("admin", "gestor", "leitura")
+def investidores_page():
+    show_inactive = request.args.get("show_inactive", "0") == "1"
+
+    if show_inactive:
+        investidores = Investor.query.order_by(Investor.id.desc()).all()
+    else:
+        investidores = Investor.query.filter_by(is_active=True).order_by(Investor.id.desc()).all()
+
+    return render_template("investidores.html", investidores=investidores, show_inactive=show_inactive)
+
+
+@app.route("/investimentos/ativos")
+@require_roles("admin", "gestor", "leitura")
+def investimentos_ativos():
+    investments = Investment.query.all()
+    ativos = [inv for inv in investments if (not inv.esta_pago()) and (not inv.esta_atrasado())]
+    return render_template("investimentos_lista.html", titulo="Investimentos em curso", filtro="ativos", investments=ativos)
+
+
+@app.route("/investimentos/pagos")
+@require_roles("admin", "gestor", "leitura")
+def investimentos_pagos():
+    investments = Investment.query.all()
+    pagos = [inv for inv in investments if inv.esta_pago()]
+    return render_template("investimentos_lista.html", titulo="Investimentos pagos", filtro="pagos", investments=pagos)
+
+
+@app.route("/investimentos/atrasados")
+@require_roles("admin", "gestor", "leitura")
+def investimentos_atrasados():
+    investments = Investment.query.all()
+    atrasados = [inv for inv in investments if inv.esta_atrasado() and (not inv.esta_pago())]
+    return render_template("investimentos_lista.html", titulo="Investimentos atrasados", filtro="atrasados", investments=atrasados)
+
+
+# -------------------------------------------------
+# DETALHES INVESTIDOR
+# -------------------------------------------------
 
 @app.route("/investidor/<int:investor_id>")
 @require_roles("admin", "gestor", "leitura")
@@ -517,7 +563,6 @@ def delete_investor(investor_id):
         flash("❌ Não pode apagar: este investidor ainda tem investimentos EM ABERTO.", "danger")
         return redirect(url_for("investor_detail", investor_id=investor.id))
 
-    # ✅ Soft delete (não apaga do banco)
     investor.is_active = False
     investor.deleted_at = datetime.utcnow()
     db.session.commit()
@@ -713,7 +758,7 @@ def admin_backup_excel():
 
 
 # -------------------------------------------------
-# ADMIN USERS (igual ao que tens)
+# ADMIN USERS
 # -------------------------------------------------
 
 @app.route("/admin/users", methods=["GET", "POST"])

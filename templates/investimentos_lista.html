@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2 class="mb-3">{{ titulo }}</h2>
+
+<p class="text-muted">
+  {{ descricao }}
+</p>
+
+{% if investments %}
+<div class="table-responsive">
+  <table class="table table-hover align-middle">
+    <thead>
+      <tr>
+        <th>Investidor</th>
+        <th>Plano</th>
+        <th>Valor investido</th>
+        <th>Data fim</th>
+        <th>Dias restantes</th>
+        <th>Em falta</th>
+        <th>Status</th>
+        <th class="text-end">Ações</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for inv in investments %}
+      <tr>
+        <td>
+          <a href="{{ url_for('investor_detail', investor_id=inv.investor_id) }}">
+            {{ inv.investor.nome }}
+          </a>
+        </td>
+        <td>{{ inv.plano }}</td>
+        <td>{{ "{:,.2f}".format(inv.valor_investido) }} Kz</td>
+        <td>{{ inv.data_fim }}</td>
+        <td>{{ inv.dias_restantes() }}</td>
+        <td>{{ "{:,.2f}".format(inv.valor_em_falta()) }} Kz</td>
+        <td>
+          {% if inv.esta_pago() %}
+            <span class="badge bg-success">Pago</span>
+          {% elif inv.esta_atrasado() %}
+            <span class="badge bg-danger">Atrasado</span>
+          {% else %}
+            <span class="badge bg-warning text-dark">Em curso</span>
+          {% endif %}
+        </td>
+        <td class="text-end">
+
+          <!-- PAGAR TOTAL: admin e gestor -->
+          {% if current_user.role in ["admin", "gestor"] and not inv.esta_pago() %}
+          <form method="post"
+                action="{{ url_for('pay_in_full', investment_id=inv.id) }}"
+                onsubmit="return confirm('Confirmar pagamento total?');"
+                class="d-inline">
+            <button type="submit" class="btn btn-sm btn-success me-1">
+              <i class="bi bi-check2-circle"></i>
+            </button>
+          </form>
+          {% endif %}
+
+          <!-- APAGAR: somente admin -->
+          {% if current_user.role == "admin" %}
+          <form method="post"
+                action="{{ url_for('delete_investment', investment_id=inv.id) }}"
+                onsubmit="return confirm('Apagar este investimento?');"
+                class="d-inline">
+            <button type="submit" class="btn btn-sm btn-outline-danger">
+              <i class="bi bi-trash"></i>
+            </button>
+          </form>
+          {% endif %}
+
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="text-muted">Nenhum investimento encontrado.</p>
+{% endif %}
+
+{% endblock %}

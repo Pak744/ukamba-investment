@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2 class="mb-3">Investidores</h2>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <p class="text-muted mb-0">
+    Lista de investidores registados no sistema.
+  </p>
+
+  {% if current_user.role in ["admin", "gestor"] %}
+  <a href="{{ url_for('new_investor') }}" class="btn btn-primary btn-sm">
+    <i class="bi bi-person-plus me-1"></i>Novo investidor
+  </a>
+  {% endif %}
+</div>
+
+{% if investidores %}
+<div class="table-responsive">
+  <table class="table table-hover align-middle">
+    <thead>
+      <tr>
+        <th>Nome</th>
+        <th>Profissão</th>
+        <th>Nº investimentos</th>
+        <th>Status</th>
+        <th class="text-end">Ações</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for inv in investidores %}
+      <tr>
+        <td>
+          <a href="{{ url_for('investor_detail', investor_id=inv.id) }}">
+            {{ inv.nome }}
+          </a>
+        </td>
+        <td>{{ inv.profissao or "-" }}</td>
+        <td>{{ inv.numero_investimentos }}</td>
+        <td>
+          {% if inv.is_active %}
+            <span class="badge bg-success">Ativo</span>
+          {% else %}
+            <span class="badge bg-secondary">Desativado</span>
+          {% endif %}
+        </td>
+        <td class="text-end">
+          <a href="{{ url_for('investor_detail', investor_id=inv.id) }}"
+             class="btn btn-sm btn-outline-primary">
+            <i class="bi bi-eye"></i>
+          </a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="text-muted">Nenhum investidor encontrado.</p>
+{% endif %}
+
+{% endblock %}
