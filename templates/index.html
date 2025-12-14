@@ -177,7 +177,18 @@
   </a>
 </div>
 
+<!-- ✅ PESQUISA (AGORA NO LUGAR CERTO: INVESTIDORES) -->
 {% if investidores %}
+<div class="row g-2 mb-3">
+  <div class="col-md-6">
+    <div class="input-group">
+      <span class="input-group-text"><i class="bi bi-search"></i></span>
+      <input id="dashInvestorSearch" type="text" class="form-control"
+             placeholder="Pesquisar investidor por nome, profissão ou ID...">
+    </div>
+  </div>
+</div>
+
 <div class="table-dashboard mb-4">
   <table class="table table-hover mb-0">
     <thead>
@@ -190,14 +201,14 @@
     </thead>
     <tbody>
       {% for invst in investidores %}
-      <tr>
-        <td>
+      <tr class="dash-investor-row">
+        <td class="dash-inv-nome">
           <a href="{{ url_for('investor_detail', investor_id=invst.id) }}">
             {{ invst.nome }}
           </a>
         </td>
-        <td>{{ invst.profissao or "-" }}</td>
-        <td>{{ invst.numero_investimentos }}</td>
+        <td class="dash-inv-prof">{{ invst.profissao or "-" }}</td>
+        <td class="dash-inv-num">{{ invst.numero_investimentos }}</td>
         <td class="text-end">
           {% if current_user.role in ["admin", "gestor"] %}
           <a href="{{ url_for('new_investment', investor_id=invst.id) }}"
@@ -208,6 +219,9 @@
           <span class="text-muted">—</span>
           {% endif %}
         </td>
+
+        <!-- ID escondido para pesquisa -->
+        <td class="d-none dash-inv-id">{{ invst.id }}</td>
       </tr>
       {% endfor %}
     </tbody>
@@ -310,5 +324,39 @@
 {% else %}
 <p>Nenhum investimento registado ainda.</p>
 {% endif %}
+
+<!-- ✅ SCRIPT: FILTRO DA PESQUISA (Investidores no Dashboard) -->
+<script>
+  (function () {
+    const input = document.getElementById("dashInvestorSearch");
+    const rows = Array.from(document.querySelectorAll(".dash-investor-row"));
+
+    function normalize(s) {
+      return (s || "")
+        .toString()
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "");
+    }
+
+    function filter() {
+      const q = normalize(input.value.trim());
+
+      rows.forEach(row => {
+        const nome = normalize(row.querySelector(".dash-inv-nome")?.innerText);
+        const prof = normalize(row.querySelector(".dash-inv-prof")?.innerText);
+        const id = normalize(row.querySelector(".dash-inv-id")?.innerText);
+
+        const hit = !q || nome.includes(q) || prof.includes(q) || id.includes(q);
+        row.classList.toggle("d-none", !hit);
+      });
+    }
+
+    if (input) {
+      input.addEventListener("input", filter);
+      filter();
+    }
+  })();
+</script>
 
 {% endblock %}
