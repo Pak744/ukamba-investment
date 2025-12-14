@@ -24,28 +24,23 @@ import pandas as pd
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
-# ✅ SECRET_KEY vem do Render (Environment)
-# Se não existir, usa um fallback (apenas para teste local)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "DEV_ONLY_change_me")
 
-# ✅ DATABASE_URL vem do Render (Environment)
-# Render/Heroku às vezes usam postgres:// e o SQLAlchemy prefere postgresql://
 db_url = os.environ.get("DATABASE_URL")
 if db_url and db_url.startswith("postgres://"):
     db_url = db_url.replace("postgres://", "postgresql://", 1)
 
-# fallback local
 app.config["SQLALCHEMY_DATABASE_URI"] = db_url or "sqlite:///ukamba.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db = SQLAlchemy(app)
 
 login_manager = LoginManager(app)
-login_manager.login_view = "login"  # rota de login
+login_manager.login_view = "login"
 
 
 # -------------------------------------------------
-# MODELOS (TABELAS DO BANCO)
+# MODELOS
 # -------------------------------------------------
 
 class User(db.Model, UserMixin):
@@ -54,12 +49,8 @@ class User(db.Model, UserMixin):
     username = db.Column(db.String(50), unique=True, nullable=False)
     password_hash = db.Column(db.String(200), nullable=False)
 
-    # roles: admin | gestor | leitura
-    role = db.Column(db.String(20), nullable=False, default="gestor")
-
-    # permite bloquear conta
+    role = db.Column(db.String(20), nullable=False, default="gestor")  # admin | gestor | leitura
     is_active = db.Column(db.Boolean, default=True)
-
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def set_password(self, password: str) -> None:
@@ -68,12 +59,6 @@ class User(db.Model, UserMixin):
     def check_password(self, password: str) -> bool:
         return check_password_hash(self.password_hash, password)
 
-    def is_admin(self) -> bool:
-        return self.role == "admin"
-
-    def is_gestor(self) -> bool:
-        return self.role == "gestor"
-
 
 class Investor(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -81,7 +66,16 @@ class Investor(db.Model):
     profissao = db.Column(db.String(100))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    investments = db.relationship("Investment", backref="investor", lazy=True)
+    # ✅ Soft delete
+    is_active = db.Column(db.Boolean, default=True)
+    deleted_at = db.Column(db.DateTime, nullable=True)
+
+    investments = db.relationship(
+        "Investment",
+        backref="investor",
+        lazy=True,
+        cascade="all, delete-orphan"
+    )
 
     @property
     def numero_investimentos(self):
@@ -94,7 +88,7 @@ class Investment(db.Model):
 
     plano = db.Column(db.String(50))
     valor_investido = db.Column(db.Float, nullable=False)
-    taxa_juro = db.Column(db.Float, nullable=False)  # taxa total do período (juros compostos)
+    taxa_juro = db.Column(db.Float, nullable=False)
     meses = db.Column(db.Integer, nullable=False)
 
     data_inicio = db.Column(db.Date, nullable=False)
@@ -103,10 +97,10 @@ class Investment(db.Model):
     valor_reembolsado = db.Column(db.Float, default=0.0)
 
     def valor_total_a_receber(self):
-        return self.valor_investido * (1 + self.taxa_juro)
+        return float(self.valor_investido) * (1 + float(self.taxa_juro))
 
     def valor_em_falta(self):
-        return self.valor_total_a_receber() - self.valor_reembolsado
+        return float(self.valor_total_a_receber()) - float(self.valor_reembolsado)
 
     def dias_restantes(self):
         hoje = datetime.utcnow().date()
@@ -114,6 +108,24 @@ class Investment(db.Model):
 
     def esta_atrasado(self):
         return self.dias_restantes() < 0 and self.valor_em_falta() > 0
+
+    def esta_pago(self):
+        return float(self.valor_reembolsado) >= float(self.valor_total_a_receber())
+
+
+class ActionLog(db.Model):
+    __tablename__ = "action_log"
+    id = db.Column(db.Integer, primary_key=True)
+
+    user_id = db.Column(db.Integer, nullable=True)
+    username = db.Column(db.String(80), nullable=True)
+
+    action = db.Column(db.String(60), nullable=False)       # ex: DELETE_INVESTOR
+    entity = db.Column(db.String(60), nullable=False)       # ex: Investor, Investment, User
+    entity_id = db.Column(db.Integer, nullable=True)
+    details = db.Column(db.Text, nullable=True)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
 # -------------------------------------------------
@@ -126,13 +138,10 @@ def load_user(user_id):
 
 
 # -------------------------------------------------
-# PERMISSÕES (REGRAS DE ACESSO)
+# PERMISSÕES
 # -------------------------------------------------
 
 def require_roles(*roles):
-    """
-    roles possíveis: "admin", "gestor", "leitura"
-    """
     def decorator(func):
         @wraps(func)
         @login_required
@@ -142,8 +151,7 @@ def require_roles(*roles):
                 flash("Conta desativada. Contacte o administrador.", "danger")
                 return redirect(url_for("login"))
 
-            user_role = getattr(current_user, "role", None)
-            if user_role not in roles:
+            if getattr(current_user, "role", None) not in roles:
                 flash("Sem permissão para aceder a esta página.", "danger")
                 return redirect(url_for("dashboard"))
             return func(*args, **kwargs)
@@ -151,63 +159,75 @@ def require_roles(*roles):
     return decorator
 
 
-# -------------------------------------------------
-# CORREÇÃO PARA O RENDER (POSTGRES): garantir colunas na tabela user
-# -------------------------------------------------
+def log_action(action: str, entity: str, entity_id: int | None = None, details: str | None = None):
+    try:
+        uid = getattr(current_user, "id", None) if current_user.is_authenticated else None
+        uname = getattr(current_user, "username", None) if current_user.is_authenticated else None
+    except Exception:
+        uid, uname = None, None
 
-def ensure_user_table_columns():
-    """
-    Se o Postgres do Render já tinha uma tabela 'user' antiga,
-    esta função adiciona colunas novas (is_active, created_at)
-    para evitar Internal Server Error.
-    """
-    inspector = inspect(db.engine)
-    tables = inspector.get_table_names()
-
-    if "user" not in tables:
-        return  # create_all vai criar
-
-    cols = [c["name"] for c in inspector.get_columns("user")]
-
-    # --- is_active ---
-    if "is_active" not in cols:
-        try:
-            db.session.execute(text('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE'))
-        except Exception:
-            try:
-                db.session.execute(text("ALTER TABLE user ADD COLUMN is_active BOOLEAN DEFAULT 1"))
-            except Exception:
-                pass
-
-    # --- created_at ---
-    if "created_at" not in cols:
-        try:
-            db.session.execute(text('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS created_at TIMESTAMP'))
-        except Exception:
-            try:
-                db.session.execute(text("ALTER TABLE user ADD COLUMN created_at DATETIME"))
-            except Exception:
-                pass
-
+    al = ActionLog(
+        user_id=uid,
+        username=uname,
+        action=action,
+        entity=entity,
+        entity_id=entity_id,
+        details=details
+    )
+    db.session.add(al)
     db.session.commit()
 
 
 # -------------------------------------------------
-# INICIALIZAÇÃO DO BANCO + ADMIN INICIAL (PRODUÇÃO)
+# MIGRAÇÃO “LEVE” (sem Alembic) PARA RENDER/POSTGRES
 # -------------------------------------------------
 
+def ensure_columns(table_name: str, columns_sql: list[str]):
+    inspector = inspect(db.engine)
+    tables = inspector.get_table_names()
+    if table_name not in tables:
+        return
+
+    existing_cols = [c["name"] for c in inspector.get_columns(table_name)]
+
+    for col_name, sql_pg, sql_sqlite in columns_sql:
+        if col_name in existing_cols:
+            continue
+        try:
+            if "postgresql" in str(db.engine.url):
+                db.session.execute(text(sql_pg))
+            else:
+                db.session.execute(text(sql_sqlite))
+        except Exception:
+            pass
+
+    db.session.commit()
+
+
 def init_db_and_seed_admin():
-    """
-    - Cria tabelas
-    - Garante colunas na tabela user (Render/Postgres)
-    - Cria admin inicial se não existir
-    """
     with app.app_context():
         db.create_all()
 
-        # 🔧 garante colunas ANTES de consultar User.query (evita crash no Render)
-        ensure_user_table_columns()
+        # ✅ garantir colunas novas em tabelas antigas
+        ensure_columns("user", [
+            ("is_active",
+             'ALTER TABLE "user" ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE',
+             "ALTER TABLE user ADD COLUMN is_active BOOLEAN DEFAULT 1"),
+            ("created_at",
+             'ALTER TABLE "user" ADD COLUMN IF NOT EXISTS created_at TIMESTAMP',
+             "ALTER TABLE user ADD COLUMN created_at DATETIME"),
+        ])
 
+        ensure_columns("investor", [
+            ("is_active",
+             'ALTER TABLE investor ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE',
+             "ALTER TABLE investor ADD COLUMN is_active BOOLEAN DEFAULT 1"),
+            ("deleted_at",
+             'ALTER TABLE investor ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP',
+             "ALTER TABLE investor ADD COLUMN deleted_at DATETIME"),
+        ])
+
+        # admin inicial
         admin_username = os.environ.get("ADMIN_USERNAME", "admin")
         admin_password = os.environ.get("ADMIN_PASSWORD", None)
 
@@ -220,14 +240,13 @@ def init_db_and_seed_admin():
             u.set_password(admin_password)
             db.session.add(u)
             db.session.commit()
-            print(f"[OK] Admin criado: {admin_username} / (senha definida no ENV ou fallback)")
-
+            print(f"[OK] Admin criado: {admin_username}")
 
 init_db_and_seed_admin()
 
 
 # -------------------------------------------------
-# ROTAS DE AUTENTICAÇÃO
+# AUTH
 # -------------------------------------------------
 
 @app.route("/login", methods=["GET", "POST"])
@@ -243,10 +262,11 @@ def login():
                 return redirect(url_for("login"))
 
             login_user(user)
+            log_action("LOGIN", "User", user.id, f"username={user.username}")
             flash("Login efetuado com sucesso!", "success")
             return redirect(url_for("dashboard"))
-        else:
-            flash("Usuário ou senha inválidos.", "danger")
+
+        flash("Usuário ou senha inválidos.", "danger")
 
     return render_template("login.html")
 
@@ -254,14 +274,14 @@ def login():
 @app.route("/logout")
 @login_required
 def logout():
+    try:
+        log_action("LOGOUT", "User", getattr(current_user, "id", None), None)
+    except Exception:
+        pass
     logout_user()
     flash("Sessão terminada.", "info")
     return redirect(url_for("login"))
 
-
-# -------------------------------------------------
-# HOME (RAIZ DO SITE)
-# -------------------------------------------------
 
 @app.route("/")
 def home():
@@ -271,13 +291,20 @@ def home():
 
 
 # -------------------------------------------------
-# DASHBOARD E INVESTIDORES (LEITURA/gestor/admin)
+# DASHBOARD
 # -------------------------------------------------
 
 @app.route("/dashboard")
 @require_roles("admin", "gestor", "leitura")
 def dashboard():
-    investidores = Investor.query.all()
+    # Por padrão, escondemos investidores desativados
+    show_inactive = request.args.get("show_inactive", "0") == "1"
+
+    if show_inactive:
+        investidores = Investor.query.order_by(Investor.id.desc()).all()
+    else:
+        investidores = Investor.query.filter_by(is_active=True).order_by(Investor.id.desc()).all()
+
     investments = Investment.query.all()
 
     total_investido = sum(inv.valor_investido for inv in investments)
@@ -291,6 +318,7 @@ def dashboard():
         total_investido=total_investido,
         total_reembolsado=total_reembolsado,
         total_a_recuperar=total_a_recuperar,
+        show_inactive=show_inactive
     )
 
 
@@ -304,8 +332,13 @@ def ukamba():
 @require_roles("admin", "gestor", "leitura")
 def investor_detail(investor_id):
     investor = Investor.query.get_or_404(investor_id)
-    investments = investor.investments
 
+    # leitura não deve abrir investidor desativado (para não confundir)
+    if investor.is_active is False and current_user.role != "admin":
+        flash("Este investidor está desativado.", "warning")
+        return redirect(url_for("dashboard"))
+
+    investments = investor.investments
     total_investido = sum(inv.valor_investido for inv in investments)
     total_reembolsado = sum(inv.valor_reembolsado for inv in investments)
     total_em_falta = sum(inv.valor_em_falta() for inv in investments)
@@ -343,7 +376,7 @@ def investor_report(investor_id):
 
 
 # -------------------------------------------------
-# NOVO INVESTIDOR / NOVO INVESTIMENTO (gestor/admin)
+# CRIAR INVESTIDOR / INVESTIMENTO
 # -------------------------------------------------
 
 @app.route("/novo_investidor", methods=["GET", "POST"])
@@ -353,10 +386,11 @@ def new_investor():
         nome = request.form["nome"]
         profissao = request.form.get("profissao", "")
 
-        investor = Investor(nome=nome, profissao=profissao)
+        investor = Investor(nome=nome, profissao=profissao, is_active=True)
         db.session.add(investor)
         db.session.commit()
 
+        log_action("CREATE_INVESTOR", "Investor", investor.id, f"nome={nome}")
         flash("Investidor criado com sucesso!", "success")
         return redirect(url_for("dashboard"))
 
@@ -368,12 +402,15 @@ def new_investor():
 def new_investment(investor_id):
     investor = Investor.query.get_or_404(investor_id)
 
+    if investor.is_active is False:
+        flash("Não pode criar investimento para um investidor desativado.", "danger")
+        return redirect(url_for("investor_detail", investor_id=investor.id))
+
     if request.method == "POST":
         plano = request.form["plano"]
         valor_investido = float(request.form["valor_investido"])
         meses = int(request.form["meses"])
 
-        # taxa mensal por faixa
         if valor_investido >= 1_000_000:
             taxa_mensal = 0.03
         elif 500_000 <= valor_investido <= 999_999:
@@ -402,6 +439,7 @@ def new_investment(investor_id):
         db.session.add(investment)
         db.session.commit()
 
+        log_action("CREATE_INVESTMENT", "Investment", investment.id, f"investor_id={investor.id}, valor={valor_investido}")
         flash("Investimento registado com sucesso!", "success")
         return redirect(url_for("investor_detail", investor_id=investor.id))
 
@@ -409,7 +447,7 @@ def new_investment(investor_id):
 
 
 # -------------------------------------------------
-# DELETAR INVESTIMENTO (somente admin)
+# APAGAR INVESTIMENTO (admin)
 # -------------------------------------------------
 
 @app.route("/investimento/<int:investment_id>/deletar", methods=["POST"])
@@ -421,12 +459,13 @@ def delete_investment(investment_id):
     db.session.delete(investment)
     db.session.commit()
 
+    log_action("DELETE_INVESTMENT", "Investment", investment_id, f"investor_id={investor_id}")
     flash("Investimento apagado com sucesso!", "info")
     return redirect(url_for("investor_detail", investor_id=investor_id))
 
 
 # -------------------------------------------------
-# ✅ MARCAR INVESTIMENTO COMO PAGO (TOTAL) (admin e gestor)
+# PAGAR TOTAL (admin/gestor)
 # -------------------------------------------------
 
 @app.route("/investimento/<int:investment_id>/pagar_total", methods=["POST"])
@@ -435,7 +474,6 @@ def pay_in_full(investment_id):
     investment = Investment.query.get_or_404(investment_id)
 
     total_previsto = float(investment.valor_total_a_receber())
-
     if float(investment.valor_reembolsado) >= total_previsto:
         flash("Este investimento já está marcado como pago.", "info")
         return redirect(url_for("investor_detail", investor_id=investment.investor_id))
@@ -443,13 +481,13 @@ def pay_in_full(investment_id):
     investment.valor_reembolsado = total_previsto
     db.session.commit()
 
+    log_action("PAY_FULL", "Investment", investment.id, f"set valor_reembolsado={total_previsto}")
     flash("✅ Investimento marcado como PAGO (total) com sucesso!", "success")
     return redirect(url_for("investor_detail", investor_id=investment.investor_id))
 
 
 # -------------------------------------------------
-# ✅ DELETAR INVESTIDOR (somente admin)
-# - Apaga também todos os investimentos do investidor
+# ✅ APAGAR INVESTIDOR (SOFT DELETE) (admin)
 # -------------------------------------------------
 
 @app.route("/investidor/<int:investor_id>/deletar", methods=["POST"])
@@ -457,25 +495,31 @@ def pay_in_full(investment_id):
 def delete_investor(investor_id):
     investor = Investor.query.get_or_404(investor_id)
 
-    # apaga investimentos antes (evita erro de FK no Postgres)
-    Investment.query.filter_by(investor_id=investor.id).delete(synchronize_session=False)
+    # ✅ PROTEÇÃO: se existir investimento em aberto, bloqueia
+    open_investments = [inv for inv in investor.investments if inv.valor_em_falta() > 0]
+    if open_investments:
+        flash("❌ Não pode apagar: este investidor ainda tem investimentos EM ABERTO.", "danger")
+        return redirect(url_for("investor_detail", investor_id=investor.id))
 
-    db.session.delete(investor)
+    # ✅ Soft delete (não apaga do banco)
+    investor.is_active = False
+    investor.deleted_at = datetime.utcnow()
     db.session.commit()
 
-    flash("Investidor apagado com sucesso!", "info")
+    log_action("DELETE_INVESTOR_SOFT", "Investor", investor.id, f"nome={investor.nome}")
+    flash("✅ Investidor desativado com sucesso (soft delete).", "success")
     return redirect(url_for("dashboard"))
 
 
 # -------------------------------------------------
-# RELATÓRIOS GERAIS (leitura/gestor/admin)
+# RELATÓRIOS
 # -------------------------------------------------
 
 @app.route("/relatorios")
 @require_roles("admin", "gestor", "leitura")
 def relatorios():
     investments = Investment.query.all()
-    investidores = Investor.query.all()
+    investidores = Investor.query.filter_by(is_active=True).all()
     hoje = datetime.utcnow().date()
 
     total_investido = sum(inv.valor_investido for inv in investments)
@@ -536,7 +580,7 @@ def relatorios():
 
 
 # -------------------------------------------------
-# EXPORTAR PARA EXCEL (admin e gestor)
+# EXPORTAR EXCEL (admin/gestor)
 # -------------------------------------------------
 
 @app.route("/exportar/excel")
@@ -558,6 +602,7 @@ def exportar_excel():
             "Valor em falta": inv.valor_em_falta(),
             "Dias restantes": inv.dias_restantes(),
             "Atrasado": "Sim" if inv.esta_atrasado() else "Não",
+            "Pago": "Sim" if inv.esta_pago() else "Não",
         })
 
     df = pd.DataFrame(dados)
@@ -576,7 +621,83 @@ def exportar_excel():
 
 
 # -------------------------------------------------
-# ADMIN: GERIR UTILIZADORES (somente admin)
+# ADMIN: BACKUP COMPLETO (Excel com várias abas)
+# -------------------------------------------------
+
+@app.route("/admin/backup/excel")
+@require_roles("admin")
+def admin_backup_excel():
+    users = User.query.all()
+    investors = Investor.query.all()
+    investments = Investment.query.all()
+    logs = ActionLog.query.order_by(ActionLog.id.desc()).limit(5000).all()
+
+    df_users = pd.DataFrame([{
+        "id": u.id,
+        "username": u.username,
+        "role": u.role,
+        "is_active": u.is_active,
+        "created_at": u.created_at
+    } for u in users])
+
+    df_investors = pd.DataFrame([{
+        "id": i.id,
+        "nome": i.nome,
+        "profissao": i.profissao,
+        "is_active": i.is_active,
+        "deleted_at": i.deleted_at,
+        "created_at": i.created_at
+    } for i in investors])
+
+    df_investments = pd.DataFrame([{
+        "id": inv.id,
+        "investor_id": inv.investor_id,
+        "investor_nome": inv.investor.nome if inv.investor else None,
+        "plano": inv.plano,
+        "valor_investido": inv.valor_investido,
+        "taxa_juro": inv.taxa_juro,
+        "meses": inv.meses,
+        "data_inicio": inv.data_inicio,
+        "data_fim": inv.data_fim,
+        "valor_reembolsado": inv.valor_reembolsado,
+        "valor_total_previsto": inv.valor_total_a_receber(),
+        "valor_em_falta": inv.valor_em_falta(),
+        "pago": inv.esta_pago(),
+        "atrasado": inv.esta_atrasado(),
+    } for inv in investments])
+
+    df_logs = pd.DataFrame([{
+        "id": l.id,
+        "user_id": l.user_id,
+        "username": l.username,
+        "action": l.action,
+        "entity": l.entity,
+        "entity_id": l.entity_id,
+        "details": l.details,
+        "created_at": l.created_at,
+    } for l in logs])
+
+    output = io.BytesIO()
+    fname = f"ukamba_backup_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        df_users.to_excel(writer, index=False, sheet_name="Users")
+        df_investors.to_excel(writer, index=False, sheet_name="Investors")
+        df_investments.to_excel(writer, index=False, sheet_name="Investments")
+        df_logs.to_excel(writer, index=False, sheet_name="Audit_Log")
+
+    output.seek(0)
+
+    log_action("BACKUP_EXCEL", "System", None, f"file={fname}")
+    return send_file(
+        output,
+        as_attachment=True,
+        download_name=fname,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+# -------------------------------------------------
+# ADMIN USERS (igual ao que tens)
 # -------------------------------------------------
 
 @app.route("/admin/users", methods=["GET", "POST"])
@@ -605,6 +726,7 @@ def admin_users():
         db.session.add(u)
         db.session.commit()
 
+        log_action("CREATE_USER", "User", u.id, f"username={username}, role={role}")
         flash("Utilizador criado com sucesso!", "success")
         return redirect(url_for("admin_users"))
 
@@ -623,6 +745,8 @@ def admin_toggle_user(user_id):
 
     u.is_active = not u.is_active
     db.session.commit()
+
+    log_action("TOGGLE_USER", "User", u.id, f"is_active={u.is_active}")
     flash("Estado do utilizador atualizado.", "success")
     return redirect(url_for("admin_users"))
 
@@ -639,6 +763,8 @@ def admin_reset_password(user_id):
 
     u.set_password(new_password)
     db.session.commit()
+
+    log_action("RESET_PASSWORD", "User", u.id, "password reset")
     flash("Password atualizada com sucesso.", "success")
     return redirect(url_for("admin_users"))
 
