@@ -11,6 +11,8 @@
     </p>
   </div>
   <div class="text-end d-none d-md-block">
+
+    {% if current_user.role in ["admin", "gestor"] %}
     <a href="{{ url_for('exportar_excel') }}" class="btn btn-outline-primary btn-sm mb-2">
       <i class="bi bi-file-earmark-excel me-1"></i> Exportar Excel
     </a>
@@ -18,6 +20,12 @@
     <a href="{{ url_for('new_investor') }}" class="btn btn-primary btn-sm">
       <i class="bi bi-person-plus me-1"></i> Novo investidor
     </a>
+    {% else %}
+    <a href="{{ url_for('exportar_excel') }}" class="btn btn-outline-primary btn-sm mb-2">
+      <i class="bi bi-file-earmark-excel me-1"></i> Exportar Excel
+    </a>
+    {% endif %}
+
   </div>
 </div>
 
@@ -89,9 +97,12 @@
 
 <!-- Atalhos no mobile -->
 <div class="d-md-none mb-3">
+  {% if current_user.role in ["admin", "gestor"] %}
   <a href="{{ url_for('new_investor') }}" class="btn btn-primary btn-sm me-2 mb-2">
     <i class="bi bi-person-plus me-1"></i> Novo investidor
   </a>
+  {% endif %}
+
   <a href="{{ url_for('exportar_excel') }}" class="btn btn-outline-primary btn-sm mb-2">
     <i class="bi bi-file-earmark-excel me-1"></i> Exportar Excel
   </a>
@@ -103,31 +114,8 @@
 </div>
 
 {% if investidores %}
-
-<!-- 🔎 Pesquisa de investidores -->
-<div class="row g-2 align-items-center mb-3">
-  <div class="col-md-6">
-    <div class="input-group">
-      <span class="input-group-text"><i class="bi bi-search"></i></span>
-      <input
-        id="investorSearch"
-        type="text"
-        class="form-control"
-        placeholder="Pesquisar investidor (nome ou profissão)..."
-        autocomplete="off"
-      >
-      <button id="clearInvestorSearch" class="btn btn-outline-secondary" type="button" title="Limpar">
-        <i class="bi bi-x-lg"></i>
-      </button>
-    </div>
-    <div class="form-text">
-      <span id="investorCount">0</span> de <span id="investorTotal">0</span> investidores
-    </div>
-  </div>
-</div>
-
 <div class="table-dashboard mb-4">
-  <table class="table table-hover mb-0" id="investorTable">
+  <table class="table table-hover mb-0">
     <thead>
       <tr>
         <th>Nome</th>
@@ -138,79 +126,29 @@
     </thead>
     <tbody>
       {% for invst in investidores %}
-      <tr class="investor-row">
-        <td class="inv-nome">
+      <tr>
+        <td>
           <a href="{{ url_for('investor_detail', investor_id=invst.id) }}">
             {{ invst.nome }}
           </a>
         </td>
-        <td class="inv-prof">{{ invst.profissao or "-" }}</td>
+        <td>{{ invst.profissao or "-" }}</td>
         <td>{{ invst.numero_investimentos }}</td>
         <td class="text-end">
+          {% if current_user.role in ["admin", "gestor"] %}
           <a href="{{ url_for('new_investment', investor_id=invst.id) }}"
              class="btn btn-sm btn-outline-primary">
             <i class="bi bi-plus-circle me-1"></i> Investimento
           </a>
+          {% else %}
+          <span class="text-muted">—</span>
+          {% endif %}
         </td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
-
-  <!-- Mensagem quando não há resultados -->
-  <div id="noInvestorResults" class="p-3 text-muted" style="display:none;">
-    Nenhum investidor encontrado com esse termo.
-  </div>
 </div>
-
-<script>
-  (function () {
-    const input = document.getElementById("investorSearch");
-    const clearBtn = document.getElementById("clearInvestorSearch");
-    const rows = Array.from(document.querySelectorAll("#investorTable tbody .investor-row"));
-    const countEl = document.getElementById("investorCount");
-    const totalEl = document.getElementById("investorTotal");
-    const emptyEl = document.getElementById("noInvestorResults");
-
-    totalEl.textContent = rows.length.toString();
-
-    function normalize(s) {
-      return (s || "")
-        .toString()
-        .toLowerCase()
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "");
-    }
-
-    function applyFilter() {
-      const q = normalize(input.value.trim());
-      let visible = 0;
-
-      rows.forEach(row => {
-        const nome = normalize(row.querySelector(".inv-nome")?.textContent);
-        const prof = normalize(row.querySelector(".inv-prof")?.textContent);
-        const match = !q || nome.includes(q) || prof.includes(q);
-
-        row.style.display = match ? "" : "none";
-        if (match) visible++;
-      });
-
-      countEl.textContent = visible.toString();
-      emptyEl.style.display = visible === 0 ? "" : "none";
-    }
-
-    // inicial
-    countEl.textContent = rows.length.toString();
-
-    input.addEventListener("input", applyFilter);
-    clearBtn.addEventListener("click", () => {
-      input.value = "";
-      input.focus();
-      applyFilter();
-    });
-  })();
-</script>
-
 {% else %}
 <p>Nenhum investidor registado ainda.</p>
 {% endif %}
@@ -257,7 +195,22 @@
             <span class="badge bg-success">Em dia</span>
           {% endif %}
         </td>
+
         <td class="text-end">
+          <!-- ✅ PAGAR TOTAL (admin/gestor) -->
+          {% if current_user.role in ["admin", "gestor"] %}
+          <form method="post"
+                action="{{ url_for('pay_in_full', investment_id=inv.id) }}"
+                onsubmit="return confirm('Confirmar PAGAMENTO TOTAL deste investimento?');"
+                class="d-inline">
+            <button type="submit" class="btn btn-sm btn-success me-1">
+              <i class="bi bi-check2-circle"></i>
+            </button>
+          </form>
+          {% endif %}
+
+          <!-- ✅ APAGAR (somente admin) -->
+          {% if current_user.role == "admin" %}
           <form method="post"
                 action="{{ url_for('delete_investment', investment_id=inv.id) }}"
                 onsubmit="return confirm('Tem certeza que deseja apagar este investimento?');"
@@ -266,6 +219,11 @@
               <i class="bi bi-trash"></i>
             </button>
           </form>
+          {% endif %}
+
+          {% if current_user.role == "leitura" %}
+            <span class="text-muted">—</span>
+          {% endif %}
         </td>
       </tr>
       {% endfor %}
