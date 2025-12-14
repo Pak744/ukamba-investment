@@ -307,6 +307,22 @@ def dashboard():
 
     investments = Investment.query.all()
 
+    # ✅ ORDENAÇÃO OPERACIONAL (Atrasado -> A vencer -> Em dia; mais urgente primeiro)
+    def prioridade(inv: Investment):
+        dias = inv.dias_restantes()
+        em_falta = inv.valor_em_falta()
+
+        if inv.esta_atrasado():
+            tier = 0
+        elif 0 <= dias <= 30 and em_falta > 0:
+            tier = 1
+        else:
+            tier = 2
+
+        return (tier, dias)
+
+    investments = sorted(investments, key=prioridade)
+
     total_investido = sum(inv.valor_investido for inv in investments)
     total_reembolsado = sum(inv.valor_reembolsado for inv in investments)
     total_a_recuperar = sum(inv.valor_em_falta() for inv in investments)
